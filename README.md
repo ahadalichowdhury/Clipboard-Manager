@@ -16,7 +16,7 @@ A powerful clipboard history manager for macOS that enhances your productivity b
 
 ## Installation
 
-1. Download the latest release from the [Releases](https://github.com/yourusername/clipboard-manager/releases) page
+1. Download the latest release from the [Releases](https://github.com/ahadalichowdhury/Clipboard-Manager/releases) page
 2. Mount the DMG file and drag "Clipboard Manager.app" to your Applications folder
 3. Double-click on "run_with_permissions.command" to start the app with proper permissions
 4. Grant accessibility permissions when prompted (required for clipboard monitoring)
