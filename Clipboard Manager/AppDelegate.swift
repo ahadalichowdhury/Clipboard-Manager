@@ -3,6 +3,7 @@ import Carbon
 import HotKey
 import UserNotifications
 import ApplicationServices
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
@@ -44,6 +45,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // Start monitoring clipboard
         clipboardManager.startMonitoring()
+        
+        // Update login item status based on preferences
+        updateLoginItemStatus()
         
         // Show a welcome message
         showWelcomeMessage()
@@ -306,7 +310,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         
         // Update hotkey if needed
-        updateHotKey()
+        registerHotKey()
+        
+        // Update login item status
+        updateLoginItemStatus()
     }
     
     private func updateHotKey() {
@@ -557,6 +564,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Restore activation policy if needed
         if currentPolicy != NSApp.activationPolicy() {
             NSApp.setActivationPolicy(currentPolicy)
+        }
+    }
+    
+    // MARK: - Login Item Management
+    
+    private func updateLoginItemStatus() {
+        if Preferences.shared.launchAtStartup {
+            enableLoginItem()
+        } else {
+            disableLoginItem()
+        }
+    }
+    
+    private func enableLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            Logger.shared.log("Error: Could not get bundle identifier")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use the newer API for macOS 13 (Ventura) and later
+            do {
+                try SMAppService.mainApp.register()
+                Logger.shared.log("Successfully registered app as login item using SMAppService")
+            } catch {
+                Logger.shared.log("Error registering app as login item: \(error.localizedDescription)")
+            }
+        } else {
+            // Use the older API for macOS 12 and earlier
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, true)
+            Logger.shared.log("Setting login item enabled: \(success ? "success" : "failed")")
+        }
+    }
+    
+    private func disableLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            Logger.shared.log("Error: Could not get bundle identifier")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use the newer API for macOS 13 (Ventura) and later
+            do {
+                try SMAppService.mainApp.unregister()
+                Logger.shared.log("Successfully unregistered app as login item using SMAppService")
+            } catch {
+                Logger.shared.log("Error unregistering app as login item: \(error.localizedDescription)")
+            }
+        } else {
+            // Use the older API for macOS 12 and earlier
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, false)
+            Logger.shared.log("Setting login item disabled: \(success ? "success" : "failed")")
         }
     }
 } 

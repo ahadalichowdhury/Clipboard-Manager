@@ -477,6 +477,7 @@ class PreferencesWindowController: NSWindowController {
     private var showNotificationsCheckbox: NSButton!
     private var closeAfterCopyCheckbox: NSButton!
     private var autoPasteCheckbox: NSButton!
+    private var launchAtStartupCheckbox: NSButton!
     
     // Hotkey UI elements
     private var hotkeyKeyPopup: NSPopUpButton!
@@ -1139,6 +1140,21 @@ class PreferencesWindowController: NSWindowController {
         notificationsExplanation.drawsBackground = false
         behaviorTab.addSubview(notificationsExplanation)
         
+        // Launch at startup checkbox
+        launchAtStartupCheckbox = NSButton(checkboxWithTitle: "Launch at startup", target: self, action: #selector(applyChanges))
+        launchAtStartupCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 475, width: 200, height: 20)
+        behaviorTab.addSubview(launchAtStartupCheckbox)
+        
+        // Launch at startup explanation
+        let launchAtStartupExplanation = NSTextField(labelWithString: "Automatically launch Clipboard Manager when you log in to your Mac")
+        launchAtStartupExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 495, width: 350, height: 16)
+        launchAtStartupExplanation.font = NSFont.systemFont(ofSize: 10)
+        launchAtStartupExplanation.textColor = NSColor.secondaryLabelColor
+        launchAtStartupExplanation.isEditable = false
+        launchAtStartupExplanation.isBordered = false
+        launchAtStartupExplanation.drawsBackground = false
+        behaviorTab.addSubview(launchAtStartupExplanation)
+        
         // Scroll to the top initially
         if let documentView = scrollView.documentView {
             let clipViewBounds = scrollView.contentView.bounds
@@ -1186,6 +1202,7 @@ class PreferencesWindowController: NSWindowController {
               showNotificationsCheckbox != nil &&
               closeAfterCopyCheckbox != nil &&
               autoPasteCheckbox != nil &&
+              launchAtStartupCheckbox != nil &&
               hotkeyKeyPopup != nil &&
               hotkeyCommandCheckbox != nil &&
               hotkeyShiftCheckbox != nil &&
@@ -1229,6 +1246,7 @@ class PreferencesWindowController: NSWindowController {
         showNotificationsCheckbox.state = prefs.showNotifications ? .on : .off
         closeAfterCopyCheckbox.state = prefs.closeAfterCopy ? .on : .off
         autoPasteCheckbox.state = prefs.autoPaste ? .on : .off
+        launchAtStartupCheckbox.state = prefs.launchAtStartup ? .on : .off
         
         // Hotkey
         hotkeyKeyPopup.selectItem(at: prefs.hotkeyKeyIndex)
@@ -1334,6 +1352,7 @@ class PreferencesWindowController: NSWindowController {
         prefs.showNotifications = showNotificationsCheckbox.state == .on
         prefs.closeAfterCopy = closeAfterCopyCheckbox.state == .on
         prefs.autoPaste = autoPasteCheckbox.state == .on
+        prefs.launchAtStartup = launchAtStartupCheckbox.state == .on
         
         // Hotkey
         prefs.hotkeyKeyIndex = hotkeyKeyPopup.indexOfSelectedItem

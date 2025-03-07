@@ -21,6 +21,7 @@ class Preferences: Codable {
     var showNotifications: Bool = true
     var closeAfterCopy: Bool = true
     var autoPaste: Bool = true // Whether to automatically paste after copying
+    var launchAtStartup: Bool = true // Whether to launch the app at system startup
     
     // Hotkey
     var hotkeyKeyIndex: Int = 21 // Default to "V" (index 21 in the popup)
@@ -128,6 +129,11 @@ class Preferences: Codable {
                 // Handle the new autoPaste property (might not exist in older preference files)
                 if let autoPasteValue = Mirror(reflecting: loadedPreferences).children.first(where: { $0.label == "autoPaste" })?.value as? Bool {
                     self.autoPaste = autoPasteValue
+                }
+                
+                // Handle the new launchAtStartup property (might not exist in older preference files)
+                if let launchAtStartupValue = Mirror(reflecting: loadedPreferences).children.first(where: { $0.label == "launchAtStartup" })?.value as? Bool {
+                    self.launchAtStartup = launchAtStartupValue
                 }
                 
                 // Handle the new hotkey properties (might not exist in older preference files)
