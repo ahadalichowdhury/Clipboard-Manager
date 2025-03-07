@@ -20,8 +20,8 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild -project "Clipboard Manager.xcodeproj" -scheme "Clipboard Manager" -configuration Debug build
+          xcodebuild -project ClipboardManager.xcodeproj -scheme "Clipboard Manager" -configuration Debug build
 
       - name: Run Tests
         run: |
-          xcodebuild -project "Clipboard Manager.xcodeproj" -scheme "Clipboard Manager" -configuration Debug test
+          xcodebuild -project ClipboardManager.xcodeproj -scheme "Clipboard Manager" -configuration Debug test

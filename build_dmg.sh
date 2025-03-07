@@ -7,7 +7,7 @@ echo "=== Building Clipboard Manager DMG ==="
 
 # Step 1: Build the app in Release mode
 echo "Building app in Release mode..."
-xcodebuild -scheme "Clipboard Manager" -configuration Release clean build
+xcodebuild -project ClipboardManager.xcodeproj -scheme "Clipboard Manager" -configuration Release clean build
 
 # Step 2: Prepare the DMG contents
 echo "Preparing DMG contents..."
