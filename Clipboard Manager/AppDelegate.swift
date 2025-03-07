@@ -19,6 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             Logger.shared.log("AppDelegate: Running in DEBUG mode")
         }
         
+        // Ensure we're using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
+        
         // Set up notification center delegate - safely handle this to prevent crashes
         do {
             try setupNotifications()
@@ -184,10 +187,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "OK")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         alert.runModal()
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func statusBarButtonClicked() {
@@ -222,22 +228,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             alert.addButton(withTitle: "OK")
             
             // Ensure alert appears on top of other applications
-            NSApp.activate(ignoringOtherApps: true)
+            safelyActivateApp()
             alert.window.level = .floating
             
             alert.runModal()
+            
+            // Ensure we're still using accessory activation policy
+            NSApp.setActivationPolicy(.accessory)
             return
         }
         
         // Create and configure the popup window
         historyWindow = HistoryWindowController(items: items)
         historyWindow?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         
         // Ensure window is visible and on top
         if let window = historyWindow?.window {
             window.orderFrontRegardless()
         }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func clearHistory() {
@@ -250,13 +262,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "Cancel")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         if alert.runModal() == .alertFirstButtonReturn {
             // User confirmed, clear history
             NotificationCenter.default.post(name: NSNotification.Name("ClearClipboardHistory"), object: nil)
         }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func showAbout() {
@@ -270,10 +285,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "OK")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         alert.runModal()
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func quitApp() {
@@ -321,7 +339,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         preferencesWindow?.showWindow(nil)
         
         // Force the app to be active and bring window to front
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless() // Add this to force window to front
         
@@ -331,9 +349,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 if !window.isVisible {
                     print("Window still not visible, forcing again")
                     window.orderFrontRegardless()
-                    NSApp.activate(ignoringOtherApps: true)
+                    self.safelyActivateApp()
                 }
             }
+            
+            // Ensure we're still using accessory activation policy
+            NSApp.setActivationPolicy(.accessory)
         }
         
         print("Preferences window created and should be visible: \(window), isVisible: \(window.isVisible)")
@@ -523,5 +544,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         // Show the notification even when the app is in the foreground
         completionHandler([.banner, .sound])
+    }
+    
+    // Helper method to safely activate the app without changing its activation policy
+    private func safelyActivateApp() {
+        // Save current activation policy
+        let currentPolicy = NSApp.activationPolicy()
+        
+        // Activate the app
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Restore activation policy if needed
+        if currentPolicy != NSApp.activationPolicy() {
+            NSApp.setActivationPolicy(currentPolicy)
+        }
     }
 } 

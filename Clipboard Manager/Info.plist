@@ -30,6 +30,8 @@
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSUIElement</key>
+    <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>This app needs to control other applications to enable paste functionality.</string>
     <key>NSHighResolutionCapable</key>

@@ -550,6 +550,8 @@ class PreferencesWindowController: NSWindowController {
         
         // Force the app to be active first
         NSApp.activate(ignoringOtherApps: true)
+        // Ensure we maintain accessory policy
+        NSApp.setActivationPolicy(.accessory)
         
         // Make the window key and bring it to front
         super.showWindow(sender)
@@ -564,6 +566,8 @@ class PreferencesWindowController: NSWindowController {
                 print("Window still not visible after showWindow, forcing again")
                 window.orderFrontRegardless()
                 NSApp.activate(ignoringOtherApps: true)
+                // Ensure we maintain accessory policy
+                NSApp.setActivationPolicy(.accessory)
             }
         }
         

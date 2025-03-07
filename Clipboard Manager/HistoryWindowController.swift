@@ -460,6 +460,8 @@ class HistoryWindowController: NSWindowController {
         
         // Ensure alert appears on top of other applications
         NSApp.activate(ignoringOtherApps: true)
+        // Ensure we maintain accessory policy
+        NSApp.setActivationPolicy(.accessory)
         alert.window.level = .floating
         
         if alert.runModal() == .alertFirstButtonReturn {
@@ -473,6 +475,9 @@ class HistoryWindowController: NSWindowController {
                 }
             }
         }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     // Add a method to update items without recreating the window
