@@ -3,7 +3,7 @@ import UserNotifications
 
 struct ClipboardItem: Codable, Identifiable {
     let id: UUID
-    let content: String
+    var content: String
     let timestamp: Date
     var isPinned: Bool
     
@@ -54,6 +54,7 @@ class ClipboardManager {
         NotificationCenter.default.addObserver(self, selector: #selector(deleteItem(_:)), name: NSNotification.Name("DeleteClipboardItem"), object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged), name: NSNotification.Name("PreferencesChanged"), object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(ignoreNextChange), name: NSNotification.Name("IgnoreNextClipboardChange"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateItem(_:)), name: NSNotification.Name("UpdateClipboardItem"), object: nil)
     }
     
     deinit {
@@ -183,6 +184,41 @@ class ClipboardManager {
         // Reset the flag after a short delay to ensure it's only used for the next change
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.ignoreNextClipboardChange = false
+        }
+    }
+    
+    @objc func updateItem(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let itemID = userInfo["itemId"] as? UUID,
+              let newContent = userInfo["content"] as? String else { return }
+        
+        print("Updating item with ID: \(itemID)")
+        
+        if let index = history.firstIndex(where: { $0.id == itemID }) {
+            var item = history[index]
+            
+            // Update the content
+            item.content = newContent
+            history[index] = item
+            
+            print("Item updated: \(item.content.prefix(30))...")
+            
+            // Save the updated history
+            saveHistory()
+            
+            // Update the clipboard with the new content if it's the most recent item
+            if index == 0 || item.isPinned {
+                // Tell the clipboard manager to ignore the next clipboard change
+                ignoreNextClipboardChange = true
+                
+                // Update the clipboard
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(newContent, forType: .string)
+                lastContent = newContent
+            }
+            
+            // Notify that history was updated
+            NotificationCenter.default.post(name: NSNotification.Name("ClipboardHistoryUpdated"), object: nil)
         }
     }
     

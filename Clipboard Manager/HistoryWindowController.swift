@@ -6,8 +6,15 @@ class ClipboardItemCard: NSView {
     private var contentLabel: NSTextField!
     private var pinButton: NSButton!
     private var menuButton: NSButton!
-    private var item: ClipboardItem!
+    var item: ClipboardItem!
     private var clickAction: ((ClipboardItem) -> Void)?
+    var isSelected: Bool = false {
+        didSet {
+            if isSelected != oldValue {
+                updateSelectionAppearance()
+            }
+        }
+    }
     
     init(frame: NSRect, item: ClipboardItem, clickAction: @escaping (ClipboardItem) -> Void) {
         self.item = item
@@ -75,9 +82,16 @@ class ClipboardItemCard: NSView {
         addSubview(pinButton)
         addSubview(menuButton)
         
-        // Add click gesture for the content area only
+        // Add click gesture for the content area
         let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
         contentLabel.addGestureRecognizer(clickGesture)
+        
+        // Add double-click gesture for editing
+        let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
+        doubleClickGesture.numberOfClicksRequired = 2
+        contentLabel.addGestureRecognizer(doubleClickGesture)
+        
+        // We'll handle the click precedence in the action methods instead of using the API
     }
     
     @objc private func applyPreferences() {
@@ -98,6 +112,11 @@ class ClipboardItemCard: NSView {
         
         // Apply text color if content label exists
         applyTextColor()
+        
+        // If selected, update selection appearance
+        if isSelected {
+            updateSelectionAppearance()
+        }
     }
     
     private func applyTextColor() {
@@ -112,6 +131,10 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewClicked() {
+        // Notify the parent controller that this card was clicked
+        NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
+        
+        // Call the click action
         clickAction?(item)
     }
     
@@ -139,6 +162,11 @@ class ClipboardItemCard: NSView {
         copyItem.target = self
         menu.addItem(copyItem)
         
+        // Add "Edit" option
+        let editItem = NSMenuItem(title: "Edit", action: #selector(editItemClicked), keyEquivalent: "")
+        editItem.target = self
+        menu.addItem(editItem)
+        
         // Add "Delete" option
         let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteItemClicked), keyEquivalent: "")
         deleteItem.target = self
@@ -152,9 +180,19 @@ class ClipboardItemCard: NSView {
         clickAction?(item)
     }
     
+    @objc private func editItemClicked() {
+        // Post notification to edit this item
+        NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
+    }
+    
     @objc private func deleteItemClicked() {
         // Delete item
         NotificationCenter.default.post(name: NSNotification.Name("DeleteClipboardItem"), object: item.id)
+    }
+    
+    @objc private func viewDoubleClicked() {
+        // Post notification to edit this item
+        NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -169,6 +207,32 @@ class ClipboardItemCard: NSView {
     override func mouseExited(with event: NSEvent) {
         applyPreferences()
     }
+    
+    private func updateSelectionAppearance() {
+        // Update the appearance based on selection state
+        if isSelected {
+            // Get preferences
+            let prefs = Preferences.shared
+            
+            // Create a selection indicator
+            wantsLayer = true
+            
+            // Apply a highlighted background color
+            if let backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) {
+                // Use a slightly brighter version of the background color
+                let brighterColor = backgroundColor.blended(withFraction: 0.3, of: NSColor.white) ?? backgroundColor
+                layer?.backgroundColor = brighterColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
+                
+                // Add a border
+                layer?.borderWidth = 2.0
+                layer?.borderColor = NSColor.systemBlue.withAlphaComponent(0.7).cgColor
+            }
+        } else {
+            // Reset to normal appearance
+            applyPreferences()
+            layer?.borderWidth = 0.0
+        }
+    }
 }
 
 class HistoryWindowController: NSWindowController {
@@ -180,6 +244,8 @@ class HistoryWindowController: NSWindowController {
     private var tabView: NSSegmentedControl! // Add tab view for All/Pinned tabs
     private var currentTab: Int = 0 // 0 = All, 1 = Pinned
     private var targetApplication: NSRunningApplication? // Store the target application
+    private var selectedItemIndex: Int = 0 // Track the currently selected item
+    private var selectedCard: ClipboardItemCard? // Reference to the currently selected card
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -226,6 +292,15 @@ class HistoryWindowController: NSWindowController {
         
         // Register for preferences changes
         NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged), name: NSNotification.Name("PreferencesChanged"), object: nil)
+        
+        // Register for card click notifications
+        NotificationCenter.default.addObserver(self, selector: #selector(cardClicked(_:)), name: NSNotification.Name("CardClicked"), object: nil)
+        
+        // Register for edit item notifications
+        NotificationCenter.default.addObserver(self, selector: #selector(editClipboardItem(_:)), name: NSNotification.Name("EditClipboardItem"), object: nil)
+        
+        // Set up keyboard event monitoring
+        setupKeyboardMonitoring()
     }
     
     deinit {
@@ -351,6 +426,10 @@ class HistoryWindowController: NSWindowController {
             displayItems = items.filter { $0.isPinned }
         }
         
+        // Reset selected item index to the most recent item (top item)
+        selectedItemIndex = 0
+        selectedCard = nil
+        
         // Calculate container height based on number of items and preferences
         let containerHeight = CGFloat(displayItems.count * prefs.cardHeight + (displayItems.count - 1) * prefs.cardSpacing + 20)
         containerView.frame = NSRect(x: 0, y: 0, width: containerView.frame.width, height: max(containerHeight, scrollView.bounds.height))
@@ -358,12 +437,18 @@ class HistoryWindowController: NSWindowController {
         // Create card for each item
         var yPosition = Int(containerHeight) - prefs.cardHeight - 10
         
-        for item in displayItems {
+        for (index, item) in displayItems.enumerated() {
             let cardFrame = NSRect(x: 20, y: CGFloat(yPosition), width: containerView.bounds.width - 40, height: CGFloat(prefs.cardHeight))
             let card = ClipboardItemCard(frame: cardFrame, item: item) { [weak self] selectedItem in
                 self?.itemSelected(selectedItem)
             }
             card.autoresizingMask = [.width]
+            
+            // Set selection state for the card
+            card.isSelected = (index == selectedItemIndex)
+            if index == selectedItemIndex {
+                selectedCard = card
+            }
             
             containerView.addSubview(card)
             yPosition -= (prefs.cardHeight + prefs.cardSpacing) // Card height + spacing
@@ -484,6 +569,217 @@ class HistoryWindowController: NSWindowController {
     func updateItems(_ newItems: [ClipboardItem]) {
         self.items = newItems
         updateCardViews()
+    }
+    
+    private func setupKeyboardMonitoring() {
+        // Make the window first responder to receive key events
+        window?.makeFirstResponder(nil)
+        
+        // Set up local event monitor for keyboard events
+        NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self = self else { return event }
+            
+            // Handle key events
+            if self.handleKeyEvent(event) {
+                return nil // Event was handled, don't propagate
+            }
+            
+            return event // Event wasn't handled, propagate normally
+        }
+    }
+    
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        let keyCode = event.keyCode
+        
+        // Get filtered items based on current tab
+        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        
+        // Handle arrow keys
+        switch keyCode {
+        case 125: // Down arrow
+            if selectedItemIndex < displayItems.count - 1 {
+                // Deselect current item
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Select next item
+                selectedItemIndex += 1
+                updateCardSelection(at: selectedItemIndex, isSelected: true)
+                
+                // Ensure the selected item is visible
+                scrollToSelectedItem()
+            }
+            return true
+            
+        case 126: // Up arrow
+            if selectedItemIndex > 0 {
+                // Deselect current item
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Select previous item
+                selectedItemIndex -= 1
+                updateCardSelection(at: selectedItemIndex, isSelected: true)
+                
+                // Ensure the selected item is visible
+                scrollToSelectedItem()
+            }
+            return true
+            
+        case 36: // Return/Enter key
+            if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
+                // Paste the selected item
+                itemSelected(displayItems[selectedItemIndex])
+            }
+            return true
+            
+        case 14: // E key
+            if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
+                // Edit the selected item
+                let itemId = displayItems[selectedItemIndex].id
+                NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: itemId)
+            }
+            return true
+            
+        default:
+            return false
+        }
+    }
+    
+    private func updateCardSelection(at index: Int, isSelected: Bool) {
+        // Get filtered items based on current tab
+        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        
+        // Ensure index is valid
+        guard index >= 0 && index < displayItems.count else { return }
+        
+        // Find the card view for the item at the given index
+        for subview in containerView.subviews {
+            if let card = subview as? ClipboardItemCard, card.item.id == displayItems[index].id {
+                if isSelected {
+                    // Store reference to selected card
+                    selectedCard = card
+                    
+                    // Highlight the selected card
+                    card.isSelected = true
+                } else {
+                    // Remove highlight
+                    card.isSelected = false
+                    
+                    // Clear reference if this was the selected card
+                    if selectedCard == card {
+                        selectedCard = nil
+                    }
+                }
+                break
+            }
+        }
+    }
+    
+    private func scrollToSelectedItem() {
+        guard let selectedCard = selectedCard else { return }
+        
+        // Convert card frame to scroll view coordinates
+        let cardFrameInScrollView = containerView.convert(selectedCard.frame, to: scrollView.contentView)
+        
+        // Check if card is fully visible in the scroll view
+        let scrollViewVisibleRect = scrollView.contentView.bounds
+        
+        if !scrollViewVisibleRect.contains(cardFrameInScrollView) {
+            // Card is not fully visible, scroll to make it visible
+            scrollView.contentView.scrollToVisible(cardFrameInScrollView)
+        }
+    }
+    
+    @objc private func cardClicked(_ notification: Notification) {
+        // Get the clicked item ID
+        guard let clickedItemId = notification.object as? UUID else { return }
+        
+        // Get filtered items based on current tab
+        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        
+        // Find the index of the clicked item
+        if let index = displayItems.firstIndex(where: { $0.id == clickedItemId }) {
+            // Deselect current item if different
+            if index != selectedItemIndex {
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Update selected index
+                selectedItemIndex = index
+                
+                // Select the new item
+                updateCardSelection(at: selectedItemIndex, isSelected: true)
+            }
+        }
+    }
+    
+    @objc private func editClipboardItem(_ notification: Notification) {
+        // Get the item ID to edit
+        guard let itemId = notification.object as? UUID,
+              let itemIndex = items.firstIndex(where: { $0.id == itemId }) else { return }
+        
+        let item = items[itemIndex]
+        
+        // Create an edit dialog
+        let alert = NSAlert()
+        alert.messageText = "Edit Clipboard Item"
+        alert.informativeText = "Modify the text below:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        
+        // Add a text field for editing
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        textField.stringValue = item.content
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.isBordered = true
+        textField.drawsBackground = true
+        textField.font = NSFont.systemFont(ofSize: 14)
+        
+        // Create a scroll view to contain the text field for long content
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .bezelBorder
+        
+        // Use a text view instead for better multiline editing
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        textView.string = item.content
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        
+        scrollView.documentView = textView
+        
+        alert.accessoryView = scrollView
+        
+        // Ensure alert appears on top of other applications
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.level = .floating
+        
+        // Show the dialog
+        let response = alert.runModal()
+        
+        if response == .alertFirstButtonReturn {
+            // User clicked Save
+            let updatedContent = textView.string
+            
+            // Update the item in the clipboard manager
+            NotificationCenter.default.post(
+                name: NSNotification.Name("UpdateClipboardItem"),
+                object: nil,
+                userInfo: ["itemId": itemId, "content": updatedContent]
+            )
+        }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
 }
 

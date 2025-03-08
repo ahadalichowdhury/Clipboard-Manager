@@ -204,4 +204,19 @@ extension NSColor {
         
         return String(format: "#%02X%02X%02X", r, g, b)
     }
+    
+    // Add a method to blend colors for selection highlighting
+    func blended(withFraction fraction: CGFloat, of color: NSColor) -> NSColor? {
+        guard let rgb1 = self.usingColorSpace(.sRGB),
+              let rgb2 = color.usingColorSpace(.sRGB) else {
+            return nil
+        }
+        
+        let r = rgb1.redComponent * (1 - fraction) + rgb2.redComponent * fraction
+        let g = rgb1.greenComponent * (1 - fraction) + rgb2.greenComponent * fraction
+        let b = rgb1.blueComponent * (1 - fraction) + rgb2.blueComponent * fraction
+        let a = rgb1.alphaComponent * (1 - fraction) + rgb2.alphaComponent * fraction
+        
+        return NSColor(red: r, green: g, blue: b, alpha: a)
+    }
 } 

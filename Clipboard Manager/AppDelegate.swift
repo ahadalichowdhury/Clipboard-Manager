@@ -222,6 +222,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     @objc private func showHistory() {
+        // Get the clipboard history
         let items = getClipboardHistory()
         
         if items.isEmpty {
@@ -242,14 +243,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
         
-        // Create and configure the popup window
+        // Create and show the history window
         historyWindow = HistoryWindowController(items: items)
         historyWindow?.showWindow(nil)
         safelyActivateApp()
         
-        // Ensure window is visible and on top
+        // Ensure the window is visible and can receive keyboard events
         if let window = historyWindow?.window {
             window.orderFrontRegardless()
+            window.makeKey()
+            
+            // Activate the app to ensure keyboard events are captured
+            NSApp.activate(ignoringOtherApps: true)
         }
         
         // Ensure we're still using accessory activation policy
