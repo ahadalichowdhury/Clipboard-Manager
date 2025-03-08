@@ -4,8 +4,10 @@ import ApplicationServices
 
 class ClipboardItemCard: NSView {
     private var contentLabel: NSTextField!
+    private var imageView: NSImageView?
     private var pinButton: NSButton!
     private var menuButton: NSButton!
+    private var saveButton: NSButton?
     var item: ClipboardItem!
     private var clickAction: ((ClipboardItem) -> Void)?
     var isSelected: Bool = false {
@@ -39,20 +41,78 @@ class ClipboardItemCard: NSView {
         wantsLayer = true
         applyPreferences()
         
-        // Content label
-        contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
-        contentLabel.isEditable = false
-        contentLabel.isBordered = false
-        contentLabel.drawsBackground = false
-        contentLabel.lineBreakMode = .byTruncatingTail
-        contentLabel.cell?.wraps = true
-        contentLabel.cell?.truncatesLastVisibleLine = true
-        contentLabel.font = NSFont.systemFont(ofSize: 14)
-        contentLabel.autoresizingMask = [.width, .height]
-        contentLabel.stringValue = item.content.count > 100 ? String(item.content.prefix(97)) + "..." : item.content
-        
-        // Apply text color from preferences
-        applyTextColor()
+        if item.isImage, let image = item.getImage() {
+            // Setup image view for image content
+            imageView = NSImageView(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
+            imageView?.image = image
+            imageView?.imageScaling = .scaleProportionallyUpOrDown
+            imageView?.autoresizingMask = [.width, .height]
+            
+            if let imageView = imageView {
+                addSubview(imageView)
+                
+                // Add click gesture for the image area
+                let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
+                clickGesture.numberOfClicksRequired = 1
+                clickGesture.delaysPrimaryMouseButtonEvents = true
+                imageView.addGestureRecognizer(clickGesture)
+                
+                // Add double-click gesture for viewing the image
+                let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
+                doubleClickGesture.numberOfClicksRequired = 2
+                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+                imageView.addGestureRecognizer(doubleClickGesture)
+                
+                // Make sure double-click takes precedence
+                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+            }
+            
+            // Add save button for images
+            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            saveButton?.bezelStyle = .inline
+            saveButton?.isBordered = false
+            saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
+            saveButton?.imagePosition = .imageOnly
+            saveButton?.autoresizingMask = [.minXMargin, .minYMargin]
+            saveButton?.target = self
+            saveButton?.action = #selector(saveButtonClicked)
+            
+            if let saveButton = saveButton {
+                addSubview(saveButton)
+            }
+        } else {
+            // Content label for text content
+            contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
+            contentLabel.isEditable = false
+            contentLabel.isBordered = false
+            contentLabel.drawsBackground = false
+            contentLabel.lineBreakMode = .byTruncatingTail
+            contentLabel.cell?.wraps = true
+            contentLabel.cell?.truncatesLastVisibleLine = true
+            contentLabel.font = NSFont.systemFont(ofSize: 14)
+            contentLabel.autoresizingMask = [.width, .height]
+            contentLabel.stringValue = item.content.count > 100 ? String(item.content.prefix(97)) + "..." : item.content
+            
+            // Apply text color from preferences
+            applyTextColor()
+            
+            addSubview(contentLabel)
+            
+            // Add click gesture for the content area
+            let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
+            clickGesture.numberOfClicksRequired = 1
+            clickGesture.delaysPrimaryMouseButtonEvents = true
+            contentLabel.addGestureRecognizer(clickGesture)
+            
+            // Add double-click gesture for editing
+            let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
+            doubleClickGesture.numberOfClicksRequired = 2
+            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+            contentLabel.addGestureRecognizer(doubleClickGesture)
+            
+            // Make sure double-click takes precedence
+            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+        }
         
         // Pin button
         pinButton = NSButton(frame: NSRect(x: frame.width - 60, y: frame.height - 30, width: 24, height: 24))
@@ -78,20 +138,8 @@ class ClipboardItemCard: NSView {
         menuButton.target = self
         menuButton.action = #selector(menuButtonClicked)
         
-        addSubview(contentLabel)
         addSubview(pinButton)
         addSubview(menuButton)
-        
-        // Add click gesture for the content area
-        let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
-        contentLabel.addGestureRecognizer(clickGesture)
-        
-        // Add double-click gesture for editing
-        let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
-        doubleClickGesture.numberOfClicksRequired = 2
-        contentLabel.addGestureRecognizer(doubleClickGesture)
-        
-        // We'll handle the click precedence in the action methods instead of using the API
     }
     
     @objc private func applyPreferences() {
@@ -131,10 +179,16 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewClicked() {
-        // Notify the parent controller that this card was clicked
+        // Check if this is part of a double-click sequence
+        if NSApp.currentEvent?.clickCount ?? 0 > 1 {
+            // This is part of a double-click, let the double-click handler handle it
+            return
+        }
+        
+        // Notify that this card was clicked (for selection)
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
-        // Call the click action
+        // Call the click action (for copying to clipboard)
         clickAction?(item)
     }
     
@@ -162,10 +216,21 @@ class ClipboardItemCard: NSView {
         copyItem.target = self
         menu.addItem(copyItem)
         
-        // Add "Edit" option
-        let editItem = NSMenuItem(title: "Edit", action: #selector(editItemClicked), keyEquivalent: "")
-        editItem.target = self
-        menu.addItem(editItem)
+        // Add appropriate edit/view option based on content type
+        if item.isImage {
+            let viewItem = NSMenuItem(title: "View Image", action: #selector(viewImageClicked), keyEquivalent: "")
+            viewItem.target = self
+            menu.addItem(viewItem)
+            
+            // Add save options for images
+            let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(saveButtonClicked(_:)), keyEquivalent: "")
+            saveAsItem.target = self
+            menu.addItem(saveAsItem)
+        } else {
+            let editItem = NSMenuItem(title: "Edit", action: #selector(editItemClicked), keyEquivalent: "")
+            editItem.target = self
+            menu.addItem(editItem)
+        }
         
         // Add "Delete" option
         let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteItemClicked), keyEquivalent: "")
@@ -190,9 +255,126 @@ class ClipboardItemCard: NSView {
         NotificationCenter.default.post(name: NSNotification.Name("DeleteClipboardItem"), object: item.id)
     }
     
+    @objc private func viewImageClicked() {
+        // Open image in default image viewer
+        guard item.isImage else { return }
+        
+        // Create a temporary file
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+        
+        do {
+            // Convert to PNG for viewing
+            if let image = item.getImage(),
+               let tiffData = image.tiffRepresentation,
+               let bitmapImage = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                
+                try pngData.write(to: tempFile)
+                
+                // Open with default application
+                NSWorkspace.shared.open(tempFile)
+            }
+        } catch {
+            print("Error opening image: \(error)")
+        }
+    }
+    
+    @objc private func saveButtonClicked(_ sender: NSButton) {
+        // Prevent event propagation
+        NSApp.preventWindowOrdering()
+        
+        guard item.isImage, let image = item.getImage() else { return }
+        
+        // Create save menu
+        let menu = NSMenu()
+        
+        // Add "Save as PNG" option
+        let pngItem = NSMenuItem(title: "Save as PNG", action: #selector(saveAsPNG), keyEquivalent: "")
+        pngItem.target = self
+        menu.addItem(pngItem)
+        
+        // Add "Save as JPEG" option
+        let jpegItem = NSMenuItem(title: "Save as JPEG", action: #selector(saveAsJPEG), keyEquivalent: "")
+        jpegItem.target = self
+        menu.addItem(jpegItem)
+        
+        // Show menu
+        NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: sender)
+    }
+    
+    @objc private func saveAsPNG() {
+        saveImage(fileType: .png)
+    }
+    
+    @objc private func saveAsJPEG() {
+        saveImage(fileType: .jpeg)
+    }
+    
+    private func saveImage(fileType: NSBitmapImageRep.FileType) {
+        guard item.isImage, let image = item.getImage() else { return }
+        
+        // Create save panel
+        let savePanel = NSSavePanel()
+        savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        savePanel.title = "Save Image"
+        savePanel.message = "Choose a location to save the image"
+        savePanel.nameFieldStringValue = "clipboard_image"
+        
+        savePanel.beginSheetModal(for: self.window!) { response in
+            if response == .OK, let url = savePanel.url {
+                // Convert image to data
+                guard let tiffData = image.tiffRepresentation,
+                      let bitmapImage = NSBitmapImageRep(data: tiffData) else { return }
+                
+                let imageData: Data?
+                if fileType == .png {
+                    imageData = bitmapImage.representation(using: .png, properties: [:])
+                } else {
+                    imageData = bitmapImage.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+                }
+                
+                // Save to file
+                if let imageData = imageData {
+                    do {
+                        try imageData.write(to: url)
+                    } catch {
+                        // Show error alert
+                        let alert = NSAlert()
+                        alert.messageText = "Error Saving Image"
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                    }
+                }
+            }
+        }
+    }
+    
     @objc private func viewDoubleClicked() {
-        // Post notification to edit this item
-        NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
+        // Prevent event propagation to avoid beep sound
+        NSApp.preventWindowOrdering()
+        
+        // Discard any pending mouse up events to prevent the single-click action from firing
+        NSApp.discardEvents(matching: .leftMouseUp, before: nil)
+        
+        // First, notify that this card was clicked to update selection
+        NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
+        
+        // For double-click, we want to edit text or view image, not paste
+        if item.isImage {
+            // Directly call the method to view the image
+            viewImageClicked()
+        } else {
+            // Directly call the method to edit the text
+            editItemClicked()
+        }
+        
+        // Prevent the single-click action from being triggered
+        NSApp.discardEvents(matching: .leftMouseUp, before: nil)
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -586,6 +768,20 @@ class HistoryWindowController: NSWindowController {
             
             return event // Event wasn't handled, propagate normally
         }
+        
+        // Set up local event monitor for mouse events to prevent beep on double-click and triple-click
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+            // If it's a double-click or triple-click, we'll handle it in our gesture recognizers
+            if event.clickCount >= 2 && event.type == .leftMouseDown {
+                // Let our gesture recognizers handle it
+                return event
+            } else if event.clickCount >= 2 && event.type == .leftMouseUp {
+                // Prevent the system beep by consuming the event
+                return nil
+            }
+            
+            return event // Not a multi-click, propagate normally
+        }
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
@@ -626,16 +822,20 @@ class HistoryWindowController: NSWindowController {
             
         case 36: // Return/Enter key
             if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
-                // Paste the selected item
-                itemSelected(displayItems[selectedItemIndex])
+                let item = displayItems[selectedItemIndex]
+                
+                // For Return/Enter key, paste the item
+                itemSelected(item)
             }
             return true
             
         case 14: // E key
             if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
-                // Edit the selected item
-                let itemId = displayItems[selectedItemIndex].id
-                NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: itemId)
+                // Edit the selected item or view the image
+                let item = displayItems[selectedItemIndex]
+                
+                // Post the edit notification - the handler will determine whether to edit or view based on content type
+                NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
             }
             return true
             
@@ -718,6 +918,31 @@ class HistoryWindowController: NSWindowController {
         
         let item = items[itemIndex]
         
+        // If it's an image, just show the image viewer instead of edit dialog
+        if item.isImage {
+            // Create a temporary file
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+            
+            do {
+                // Convert to PNG for viewing
+                if let image = item.getImage(),
+                   let tiffData = image.tiffRepresentation,
+                   let bitmapImage = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                    
+                    try pngData.write(to: tempFile)
+                    
+                    // Open with default application
+                    NSWorkspace.shared.open(tempFile)
+                }
+            } catch {
+                print("Error opening image: \(error)")
+            }
+            return
+        }
+        
+        // For text items, show the edit dialog
         // Create an edit dialog
         let alert = NSAlert()
         alert.messageText = "Edit Clipboard Item"

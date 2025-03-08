@@ -382,12 +382,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Tell the clipboard manager to ignore the next clipboard change
         NotificationCenter.default.post(name: NSNotification.Name("IgnoreNextClipboardChange"), object: nil)
         
-        // Copy to clipboard
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(item.content, forType: .string)
+        // Use the ClipboardManager to copy the item to clipboard
+        clipboardManager.copyItemToClipboard(item)
         
         // Show a notification that the item was copied
-        showCopiedNotification(item.content)
+        showCopiedNotification(item.isImage ? "Image" : item.content)
         
         // Give the system a moment to process the clipboard change
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -413,9 +412,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let content = UNMutableNotificationContent()
             content.title = "Copied to Clipboard"
             
-            // Truncate content for notification
-            let displayText = contentText.count > 50 ? String(contentText.prefix(47)) + "..." : contentText
-            content.body = displayText
+            // Check if this is an image notification
+            if contentText == "Image" {
+                content.body = "Image copied to clipboard"
+            } else {
+                // Truncate content for notification
+                let displayText = contentText.count > 50 ? String(contentText.prefix(47)) + "..." : contentText
+                content.body = displayText
+            }
             
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             UNUserNotificationCenter.current().add(request)

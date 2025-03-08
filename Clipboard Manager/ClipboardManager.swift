@@ -6,18 +6,35 @@ struct ClipboardItem: Codable, Identifiable {
     var content: String
     let timestamp: Date
     var isPinned: Bool
+    var imageData: Data?
     
-    init(content: String, isPinned: Bool = false) {
+    var isImage: Bool {
+        return imageData != nil
+    }
+    
+    init(content: String, imageData: Data? = nil, isPinned: Bool = false) {
         self.id = UUID()
         self.content = content
+        self.imageData = imageData
         self.timestamp = Date()
         self.isPinned = isPinned
+    }
+    
+    func getImage() -> NSImage? {
+        guard let data = imageData else { return nil }
+        return NSImage(data: data)
+    }
+    
+    // Custom encoding for Codable
+    enum CodingKeys: String, CodingKey {
+        case id, content, timestamp, isPinned, imageData
     }
 }
 
 class ClipboardManager {
     private var history: [ClipboardItem] = []
     private var lastContent: String = ""
+    private var lastImageData: Data?
     private var timer: Timer?
     private let historyFilePath: URL
     private var notificationsEnabled = false
@@ -45,7 +62,7 @@ class ClipboardManager {
         
         print("Clipboard history loaded with \(history.count) items")
         for (index, item) in history.enumerated() {
-            print("Item \(index): \(item.content.prefix(30))... Pinned: \(item.isPinned)")
+            print("Item \(index): \(item.content.prefix(30))... Pinned: \(item.isPinned) IsImage: \(item.isImage)")
         }
         
         // Register for notifications
@@ -223,60 +240,108 @@ class ClipboardManager {
     }
     
     private func checkClipboard() {
-        guard let pasteboard = NSPasteboard.general.string(forType: .string) else {
+        let pasteboard = NSPasteboard.general
+        
+        // Check for image first
+        if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            // Skip if image hasn't changed
+            if let lastImageData = self.lastImageData, lastImageData == imageData {
+                return
+            }
+            
+            // Update last image data
+            self.lastImageData = imageData
+            
+            // Create a description for the image
+            let description = "[Image] \(NSImage(data: imageData)?.size.width ?? 0)x\(NSImage(data: imageData)?.size.height ?? 0)"
+            
+            // Check if this image already exists in history
+            let existingItem = history.first(where: { 
+                if let itemImageData = $0.imageData {
+                    return itemImageData == imageData
+                }
+                return false
+            })
+            
+            if existingItem != nil {
+                // Image already exists in history
+                return
+            }
+            
+            print("New clipboard image detected: \(description)")
+            
+            // Add to history
+            let item = ClipboardItem(content: description, imageData: imageData)
+            addToHistory(item)
+            
+            // Show notification only if preferences allow and permissions are granted
+            let prefs = Preferences.shared
+            if prefs.showNotifications && notificationsEnabled {
+                showNotification(for: item)
+            }
+            
             return
         }
         
-        // Skip if content hasn't changed or is empty
-        if pasteboard.isEmpty || pasteboard == lastContent {
-            return
-        }
-        
-        // Skip if we should ignore this change
-        if ignoreNextClipboardChange {
-            lastContent = pasteboard
-            ignoreNextClipboardChange = false
-            return
-        }
-        
-        // Check if this content already exists in history
-        let existingItem = history.first(where: { $0.content == pasteboard })
-        if existingItem != nil {
-            // Content already exists in history, just update lastContent
-            lastContent = pasteboard
-            return
-        }
-        
-        print("New clipboard content detected: \(pasteboard.prefix(30))...")
-        
-        // Update last content
-        lastContent = pasteboard
-        
-        // Add to history
-        let item = ClipboardItem(content: pasteboard)
-        addToHistory(item)
-        
-        // Show notification only if preferences allow and permissions are granted
-        let prefs = Preferences.shared
-        if prefs.showNotifications && notificationsEnabled {
-            showNotification(for: item)
-        }
-        
-        // Auto-paste if enabled in preferences
-        if prefs.autoPaste {
-            print("Auto-paste is enabled, attempting to paste...")
-            // Use a slight delay to ensure the clipboard content is ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                PasteManager.shared.paste()
+        // If no image, check for text
+        if let text = pasteboard.string(forType: .string) {
+            // Skip if content hasn't changed or is empty
+            if text.isEmpty || text == lastContent {
+                return
+            }
+            
+            // Skip if we should ignore this change
+            if ignoreNextClipboardChange {
+                lastContent = text
+                ignoreNextClipboardChange = false
+                return
+            }
+            
+            // Check if this content already exists in history
+            let existingItem = history.first(where: { $0.content == text })
+            if existingItem != nil {
+                // Content already exists in history, just update lastContent
+                lastContent = text
+                return
+            }
+            
+            print("New clipboard content detected: \(text.prefix(30))...")
+            
+            // Update last content
+            lastContent = text
+            
+            // Add to history
+            let item = ClipboardItem(content: text)
+            addToHistory(item)
+            
+            // Show notification only if preferences allow and permissions are granted
+            let prefs = Preferences.shared
+            if prefs.showNotifications && notificationsEnabled {
+                showNotification(for: item)
+            }
+            
+            // Auto-paste if enabled in preferences
+            if prefs.autoPaste {
+                print("Auto-paste is enabled, attempting to paste...")
+                // Use a slight delay to ensure the clipboard content is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    PasteManager.shared.paste()
+                }
             }
         }
     }
     
     private func addToHistory(_ item: ClipboardItem) {
-        print("Adding to history: \(item.content.prefix(30))...")
+        print("Adding to history: \(item.content.prefix(30))... IsImage: \(item.isImage)")
         
         // Remove duplicates (preserve pin state if it exists)
-        if let existingIndex = history.firstIndex(where: { $0.content == item.content }) {
+        if let existingIndex = history.firstIndex(where: { 
+            if item.isImage && $0.isImage {
+                return item.imageData == $0.imageData
+            } else {
+                return $0.content == item.content
+            }
+        }) {
             let isPinned = history[existingIndex].isPinned
             history.remove(at: existingIndex)
             
@@ -312,6 +377,30 @@ class ClipboardManager {
         
         // Notify that history was updated
         NotificationCenter.default.post(name: NSNotification.Name("ClipboardHistoryUpdated"), object: nil)
+    }
+    
+    // Method to copy an item back to the clipboard
+    func copyItemToClipboard(_ item: ClipboardItem) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        if item.isImage, let image = item.getImage() {
+            // Copy image to clipboard
+            pasteboard.writeObjects([image])
+        } else {
+            // Copy text to clipboard
+            pasteboard.setString(item.content, forType: .string)
+        }
+        
+        // Update last content/image to prevent re-adding
+        if item.isImage {
+            lastImageData = item.imageData
+        } else {
+            lastContent = item.content
+        }
+        
+        // Set flag to ignore the next clipboard change
+        ignoreNextClipboardChange = true
     }
     
     private func saveHistory() {
@@ -360,8 +449,12 @@ class ClipboardManager {
         let content = UNMutableNotificationContent()
         content.title = "Clipboard Manager"
         
-        let displayText = item.content
-        content.body = displayText.count > 50 ? String(displayText.prefix(47)) + "..." : displayText
+        if item.isImage {
+            content.body = "Image copied to clipboard"
+        } else {
+            let displayText = item.content
+            content.body = displayText.count > 50 ? String(displayText.prefix(47)) + "..." : displayText
+        }
         
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
