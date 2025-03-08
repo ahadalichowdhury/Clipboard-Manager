@@ -17,6 +17,13 @@ class ClipboardItemCard: NSView {
             }
         }
     }
+    var searchText: String = "" {
+        didSet {
+            if !item.isImage && contentLabel != nil {
+                updateContentWithHighlight()
+            }
+        }
+    }
     
     init(frame: NSRect, item: ClipboardItem, clickAction: @escaping (ClipboardItem) -> Void) {
         self.item = item
@@ -81,20 +88,21 @@ class ClipboardItemCard: NSView {
                 addSubview(saveButton)
             }
         } else {
-            // Content label for text content
+            // Setup text label for text content
             contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
             contentLabel.isEditable = false
             contentLabel.isBordered = false
             contentLabel.drawsBackground = false
-            contentLabel.lineBreakMode = .byTruncatingTail
             contentLabel.cell?.wraps = true
+            contentLabel.cell?.isScrollable = true
             contentLabel.cell?.truncatesLastVisibleLine = true
-            contentLabel.font = NSFont.systemFont(ofSize: 14)
             contentLabel.autoresizingMask = [.width, .height]
-            contentLabel.stringValue = item.content.count > 100 ? String(item.content.prefix(97)) + "..." : item.content
+            contentLabel.font = NSFont.systemFont(ofSize: 14)
+            contentLabel.allowsEditingTextAttributes = true
+            contentLabel.preferredMaxLayoutWidth = frame.width - 80
             
-            // Apply text color from preferences
-            applyTextColor()
+            // Set content with highlighting if needed
+            updateContentWithHighlight()
             
             addSubview(contentLabel)
             
@@ -142,6 +150,61 @@ class ClipboardItemCard: NSView {
         addSubview(menuButton)
     }
     
+    private func updateContentWithHighlight() {
+        guard contentLabel != nil else { return }
+        
+        if searchText.isEmpty || item.isImage {
+            // No search or image content, just set regular text
+            contentLabel.stringValue = item.content
+            
+            // Apply text color
+            applyTextColor()
+            return
+        }
+        
+        // Create attributed string for highlighting
+        let attributedString = NSMutableAttributedString(string: item.content)
+        
+        // Apply the base text color
+        let prefs = Preferences.shared
+        let textColor: NSColor
+        if let color = NSColor.fromHex(prefs.textColor) {
+            textColor = color
+        } else {
+            textColor = NSColor.labelColor
+        }
+        
+        attributedString.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: 0, length: item.content.count))
+        
+        // Find all occurrences of search text (case insensitive)
+        let content = item.content.lowercased()
+        let search = searchText.lowercased()
+        
+        // Use a more efficient approach for finding matches
+        var searchStartIndex = content.startIndex
+        while searchStartIndex < content.endIndex {
+            if let range = content.range(of: search, options: .caseInsensitive, range: searchStartIndex..<content.endIndex) {
+                // Convert Swift string range to NSRange for attributed string
+                let nsRange = NSRange(range, in: item.content)
+                
+                // Highlight the match with a bright yellow background and black text
+                attributedString.addAttribute(.backgroundColor, value: NSColor.systemYellow, range: nsRange)
+                attributedString.addAttribute(.foregroundColor, value: NSColor.black, range: nsRange)
+                
+                // Move search start index to after this match
+                searchStartIndex = range.upperBound
+            } else {
+                break
+            }
+        }
+        
+        // Apply the attributed string to the content label on the main thread
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.contentLabel != nil else { return }
+            self.contentLabel.attributedStringValue = attributedString
+        }
+    }
+    
     @objc private func applyPreferences() {
         let prefs = Preferences.shared
         
@@ -164,6 +227,11 @@ class ClipboardItemCard: NSView {
         // If selected, update selection appearance
         if isSelected {
             updateSelectionAppearance()
+        }
+        
+        // Update content with highlight if needed
+        if !item.isImage && contentLabel != nil {
+            updateContentWithHighlight()
         }
     }
     
@@ -432,15 +500,20 @@ class EditableTextView: NSTextView {
 
 class HistoryWindowController: NSWindowController {
     private var items: [ClipboardItem] = []
-    private var scrollView: NSScrollView!
+    private var filteredItems: [ClipboardItem] = [] // Add filtered items array
+    private var searchText: String = "" // Add search text property
     private var headerView: NSView!
-    private var clearAllButton: NSButton!
+    private var scrollView: NSScrollView!
     private var containerView: NSView!
-    private var tabView: NSSegmentedControl! // Add tab view for All/Pinned tabs
-    private var currentTab: Int = 0 // 0 = All, 1 = Pinned
-    private var targetApplication: NSRunningApplication? // Store the target application
+    private var tabView: NSSegmentedControl!
+    private var clearAllButton: NSButton!
+    private var searchField: NSSearchField! // Add search field property
+    private var searchView: NSView! // Add search view property
+    private var cardViews: [ClipboardItemCard] = []
+    private var currentTab: Int = 0
     private var selectedItemIndex: Int = 0 // Track the currently selected item
-    private var selectedCard: ClipboardItemCard? // Reference to the currently selected card
+    private var selectedCard: ClipboardItemCard? // Track the currently selected card
+    private var targetApplication: NSRunningApplication? // Store the target application
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -449,6 +522,7 @@ class HistoryWindowController: NSWindowController {
         }
         
         self.items = items
+        self.filteredItems = items // Initialize filteredItems with all items
         
         // Store the frontmost application before showing our window
         self.targetApplication = NSWorkspace.shared.frontmostApplication
@@ -515,12 +589,12 @@ class HistoryWindowController: NSWindowController {
         contentView.autoresizingMask = [.width, .height]
         window.contentView = contentView
         
-        // Create header view
-        headerView = NSView(frame: NSRect(x: 0, y: contentView.bounds.height - 60, width: contentView.bounds.width, height: 60))
+        // Create header view with extra height to accommodate search field
+        headerView = NSView(frame: NSRect(x: 0, y: contentView.bounds.height - 100, width: contentView.bounds.width, height: 100))
         headerView.autoresizingMask = [.width, .minYMargin]
         
         // Add title label
-        let titleLabel = NSTextField(frame: NSRect(x: 20, y: 20, width: 200, height: 24))
+        let titleLabel = NSTextField(frame: NSRect(x: 20, y: 60, width: 200, height: 24))
         titleLabel.stringValue = "Clipboard"
         titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
         titleLabel.isEditable = false
@@ -529,7 +603,7 @@ class HistoryWindowController: NSWindowController {
         titleLabel.textColor = NSColor.labelColor
         
         // Add tab view for All/Pinned tabs
-        tabView = NSSegmentedControl(frame: NSRect(x: 200, y: 20, width: 150, height: 24))
+        tabView = NSSegmentedControl(frame: NSRect(x: 200, y: 60, width: 150, height: 24))
         tabView.segmentCount = 2
         tabView.setLabel("All", forSegment: 0)
         tabView.setLabel("Pinned", forSegment: 1)
@@ -540,7 +614,7 @@ class HistoryWindowController: NSWindowController {
         tabView.autoresizingMask = [.minXMargin]
         
         // Add clear all button
-        clearAllButton = NSButton(frame: NSRect(x: headerView.bounds.width - 100, y: 20, width: 80, height: 24))
+        clearAllButton = NSButton(frame: NSRect(x: headerView.bounds.width - 100, y: 60, width: 80, height: 24))
         clearAllButton.title = "Clear all"
         clearAllButton.bezelStyle = .rounded
         clearAllButton.font = NSFont.systemFont(ofSize: 12)
@@ -548,13 +622,36 @@ class HistoryWindowController: NSWindowController {
         clearAllButton.action = #selector(clearAllClicked)
         clearAllButton.autoresizingMask = [.minXMargin]
         
+        // Add search field in the header (below the title/tabs)
+        searchField = NSSearchField(frame: NSRect(x: 20, y: 20, width: headerView.bounds.width - 40, height: 24))
+        searchField.placeholderString = "Search clipboard items..."
+        searchField.target = self
+        searchField.action = #selector(searchTextChanged)
+        searchField.autoresizingMask = [.width]
+        
+        // Configure search field for better responsiveness
+        if let searchFieldCell = searchField.cell as? NSSearchFieldCell {
+            searchFieldCell.sendsSearchStringImmediately = true
+            searchFieldCell.cancelButtonCell?.target = self
+            searchFieldCell.cancelButtonCell?.action = #selector(searchCancelled)
+        }
+        
+        // Add a notification observer for text changes to improve responsiveness
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(searchFieldTextDidChange),
+            name: NSControl.textDidChangeNotification,
+            object: searchField
+        )
+        
         headerView.addSubview(titleLabel)
         headerView.addSubview(tabView)
         headerView.addSubview(clearAllButton)
+        headerView.addSubview(searchField)
         contentView.addSubview(headerView)
         
-        // Create scroll view for cards
-        scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: contentView.bounds.width, height: contentView.bounds.height - 60))
+        // Create scroll view for cards (adjust for the taller header)
+        scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: contentView.bounds.width, height: contentView.bounds.height - 100))
         scrollView.autoresizingMask = [.width, .height]
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -600,25 +697,36 @@ class HistoryWindowController: NSWindowController {
             clearAllButton.title = "Unpin all"
         }
         
-        // Update the displayed items
+        // Update the card views
+        updateFilteredItems()
         updateCardViews()
     }
     
     private func updateCardViews() {
         // Remove existing cards
         containerView.subviews.forEach { $0.removeFromSuperview() }
+        cardViews.removeAll()
         
         // Get preferences
         let prefs = Preferences.shared
         
-        // Filter items based on current tab
-        let displayItems: [ClipboardItem]
-        if currentTab == 0 {
-            // All items
-            displayItems = items
+        // Get items to display based on current tab and search filter
+        var displayItems: [ClipboardItem] = []
+        
+        if searchText.isEmpty {
+            // No search filter, use tab filter only
+            if currentTab == 0 {
+                displayItems = items
+            } else {
+                displayItems = items.filter { $0.isPinned }
+            }
         } else {
-            // Only pinned items
-            displayItems = items.filter { $0.isPinned }
+            // Use filtered items
+            if currentTab == 0 {
+                displayItems = filteredItems
+            } else {
+                displayItems = filteredItems.filter { $0.isPinned }
+            }
         }
         
         // Reset selected item index to the most recent item (top item)
@@ -629,15 +737,18 @@ class HistoryWindowController: NSWindowController {
         let containerHeight = CGFloat(displayItems.count * prefs.cardHeight + (displayItems.count - 1) * prefs.cardSpacing + 20)
         containerView.frame = NSRect(x: 0, y: 0, width: containerView.frame.width, height: max(containerHeight, scrollView.bounds.height))
         
-        // Create card for each item
-        var yPosition = Int(containerHeight) - prefs.cardHeight - 10
+        // Create card for each item - start from the top instead of bottom
+        var yPosition = Int(containerView.frame.height) - prefs.cardHeight - 10
         
         for (index, item) in displayItems.enumerated() {
             let cardFrame = NSRect(x: 20, y: CGFloat(yPosition), width: containerView.bounds.width - 40, height: CGFloat(prefs.cardHeight))
             let card = ClipboardItemCard(frame: cardFrame, item: item) { [weak self] selectedItem in
                 self?.itemSelected(selectedItem)
             }
-            card.autoresizingMask = [.width]
+            card.autoresizingMask = [NSView.AutoresizingMask.width]
+            
+            // Set search text for highlighting
+            card.searchText = searchText
             
             // Set selection state for the card
             card.isSelected = (index == selectedItemIndex)
@@ -646,7 +757,15 @@ class HistoryWindowController: NSWindowController {
             }
             
             containerView.addSubview(card)
+            cardViews.append(card)
             yPosition -= (prefs.cardHeight + prefs.cardSpacing) // Card height + spacing
+        }
+        
+        // Update window title with count
+        if currentTab == 0 {
+            window?.title = searchText.isEmpty ? "Clipboard (\(displayItems.count) items)" : "Search Results (\(displayItems.count) items)"
+        } else {
+            window?.title = searchText.isEmpty ? "Pinned Clipboard Items (\(displayItems.count) items)" : "Pinned Search Results (\(displayItems.count) items)"
         }
         
         // Scroll to top after updating
@@ -688,16 +807,21 @@ class HistoryWindowController: NSWindowController {
         // Get updated history
         if let appDelegate = NSApp.delegate as? AppDelegate {
             items = appDelegate.getClipboardHistory()
+            
+            // Update filtered items based on current search text
+            updateFilteredItems()
+            
             updateCardViews()
         }
     }
     
     private func itemSelected(_ item: ClipboardItem) {
+        // Copy the selected item to the clipboard
+        copyItemToClipboard(item)
+    }
+    
+    private func copyItemToClipboard(_ item: ClipboardItem) {
         print("Item selected: \(item.content.prefix(30))...")
-        
-        // Create a menu item with the appropriate tag
-        let menuItem = NSMenuItem()
-        menuItem.tag = items.firstIndex(where: { $0.id == item.id }) ?? 0
         
         // Get the app delegate
         if let appDelegate = NSApp.delegate as? AppDelegate {
@@ -714,6 +838,13 @@ class HistoryWindowController: NSWindowController {
                 // Small delay to ensure the app is activated
                 Thread.sleep(forTimeInterval: 0.1)
             }
+            
+            // Find the index of the item
+            let itemIndex = items.firstIndex(where: { $0.id == item.id }) ?? 0
+            
+            // Create a menu item with the appropriate tag
+            let menuItem = NSMenuItem()
+            menuItem.tag = itemIndex
             
             // Copy the item to clipboard and paste if needed
             appDelegate.copyItemToClipboard(menuItem)
@@ -762,7 +893,8 @@ class HistoryWindowController: NSWindowController {
     
     // Add a method to update items without recreating the window
     func updateItems(_ newItems: [ClipboardItem]) {
-        self.items = newItems
+        items = newItems
+        updateFilteredItems()
         updateCardViews()
     }
     
@@ -798,17 +930,35 @@ class HistoryWindowController: NSWindowController {
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        let keyCode = event.keyCode
+        // Check if search field is active
+        if searchField != nil && searchField.currentEditor() != nil {
+            // Let the search field handle the event, but check for Escape key
+            if event.keyCode == 53 { // Escape key
+                // Clear search and remove focus from search field
+                searchField.stringValue = ""
+                searchCancelled()
+                window?.makeFirstResponder(nil)
+                return true
+            }
+            return false
+        }
         
         // Skip handling if an alert is being shown (for editing)
         if NSApp.modalWindow != nil {
             return false
         }
         
-        // Get filtered items based on current tab
-        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        // Get filtered items based on current tab and search
+        let displayItems: [ClipboardItem]
+        if searchText.isEmpty {
+            displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        } else {
+            displayItems = currentTab == 0 ? filteredItems : filteredItems.filter { $0.isPinned }
+        }
         
         // Handle arrow keys
+        let keyCode = event.keyCode
+        
         switch keyCode {
         case 125: // Down arrow
             if selectedItemIndex < displayItems.count - 1 {
@@ -847,6 +997,33 @@ class HistoryWindowController: NSWindowController {
             }
             return true
             
+        case 53: // Escape key
+            // If search field has text, clear it first
+            if searchField != nil && !searchText.isEmpty {
+                searchField.stringValue = ""
+                searchCancelled()
+                return true
+            }
+            
+            // Otherwise close the window
+            window?.close()
+            return true
+            
+        case 3: // F key
+            if event.modifierFlags.contains(.command) {
+                // Command+F to focus search field
+                if searchField != nil {
+                    window?.makeFirstResponder(searchField)
+                    
+                    // Select all text if there's any
+                    if !searchField.stringValue.isEmpty {
+                        searchField.currentEditor()?.selectAll(nil)
+                    }
+                    return true
+                }
+            }
+            return false
+            
         case 14: // E key
             if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
                 // Edit the selected item or view the image
@@ -863,8 +1040,13 @@ class HistoryWindowController: NSWindowController {
     }
     
     private func updateCardSelection(at index: Int, isSelected: Bool) {
-        // Get filtered items based on current tab
-        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        // Get filtered items based on current tab and search
+        let displayItems: [ClipboardItem]
+        if searchText.isEmpty {
+            displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        } else {
+            displayItems = currentTab == 0 ? filteredItems : filteredItems.filter { $0.isPinned }
+        }
         
         // Ensure index is valid
         guard index >= 0 && index < displayItems.count else { return }
@@ -898,21 +1080,21 @@ class HistoryWindowController: NSWindowController {
         // Convert card frame to scroll view coordinates
         let cardFrameInScrollView = containerView.convert(selectedCard.frame, to: scrollView.contentView)
         
-        // Check if card is fully visible in the scroll view
-        let scrollViewVisibleRect = scrollView.contentView.bounds
-        
-        if !scrollViewVisibleRect.contains(cardFrameInScrollView) {
-            // Card is not fully visible, scroll to make it visible
-            scrollView.contentView.scrollToVisible(cardFrameInScrollView)
-        }
+        // Scroll to make the card visible
+        scrollView.contentView.scrollToVisible(cardFrameInScrollView)
     }
     
     @objc private func cardClicked(_ notification: Notification) {
         // Get the clicked item ID
         guard let clickedItemId = notification.object as? UUID else { return }
         
-        // Get filtered items based on current tab
-        let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        // Get filtered items based on current tab and search
+        let displayItems: [ClipboardItem]
+        if searchText.isEmpty {
+            displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        } else {
+            displayItems = currentTab == 0 ? filteredItems : filteredItems.filter { $0.isPinned }
+        }
         
         // Find the index of the clicked item
         if let index = displayItems.firstIndex(where: { $0.id == clickedItemId }) {
@@ -1023,6 +1205,117 @@ class HistoryWindowController: NSWindowController {
         
         // Ensure we're still using accessory activation policy
         NSApp.setActivationPolicy(.accessory)
+    }
+    
+    @objc private func searchTextChanged(_ sender: NSSearchField) {
+        // Cancel any previous delayed searches
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(performSearch(_:)), object: nil)
+        
+        // If the search field is empty, clear results immediately
+        if sender.stringValue.isEmpty {
+            searchText = ""
+            filteredItems = items
+            updateCardViews()
+            return
+        }
+        
+        // Otherwise, debounce the search with a short delay
+        perform(#selector(performSearch(_:)), with: sender, afterDelay: 0.2)
+    }
+    
+    @objc private func performSearch(_ sender: NSSearchField) {
+        let newSearchText = sender.stringValue
+        
+        // Only update if the search text has actually changed
+        if searchText != newSearchText {
+            searchText = newSearchText
+            updateFilteredItems()
+        }
+    }
+    
+    private func updateFilteredItems() {
+        if searchText.isEmpty {
+            filteredItems = items
+            DispatchQueue.main.async { [weak self] in
+                self?.updateCardViews()
+            }
+            return
+        }
+        
+        // Show loading indicator
+        showSearchLoading(true)
+        
+        // Use a background queue for filtering to avoid UI freezes
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            guard let self = self else { return }
+            
+            let searchLower = self.searchText.lowercased()
+            let filtered = self.items.filter { item in
+                if self.currentTab == 1 && !item.isPinned {
+                    return false
+                }
+                
+                if item.isImage {
+                    // For images, we can only search by timestamp or other metadata
+                    return true
+                } else {
+                    return item.content.lowercased().contains(searchLower)
+                }
+            }
+            
+            // Update UI on main thread
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.filteredItems = filtered
+                self.updateCardViews()
+                
+                // Hide loading indicator
+                self.showSearchLoading(false)
+            }
+        }
+    }
+    
+    private func showSearchLoading(_ isLoading: Bool) {
+        // Only proceed if search field exists
+        guard let searchField = searchField else { return }
+        
+        if isLoading {
+            // Add a small activity indicator next to the search field
+            if searchField.subviews.first(where: { $0 is NSProgressIndicator }) == nil {
+                let activityIndicator = NSProgressIndicator(frame: NSRect(x: searchField.bounds.width - 30, y: 4, width: 16, height: 16))
+                activityIndicator.style = .spinning
+                activityIndicator.isIndeterminate = true
+                activityIndicator.controlSize = .small
+                activityIndicator.isDisplayedWhenStopped = false
+                activityIndicator.autoresizingMask = [.minXMargin]
+                activityIndicator.startAnimation(nil)
+                searchField.addSubview(activityIndicator)
+            }
+        } else {
+            // Remove the activity indicator
+            searchField.subviews.forEach { subview in
+                if let indicator = subview as? NSProgressIndicator {
+                    indicator.stopAnimation(nil)
+                    indicator.removeFromSuperview()
+                }
+            }
+        }
+    }
+    
+    @objc private func searchCancelled() {
+        // This is called when the user clicks the X button in the search field
+        searchText = ""
+        searchField.stringValue = ""
+        filteredItems = items
+        updateCardViews()
+    }
+    
+    @objc private func searchFieldTextDidChange(_ notification: Notification) {
+        // This is called for every keystroke in the search field
+        // It's more responsive than waiting for the action to be triggered
+        if let searchField = notification.object as? NSSearchField {
+            searchTextChanged(searchField)
+        }
     }
 }
 
