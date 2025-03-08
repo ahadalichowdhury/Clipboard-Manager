@@ -417,6 +417,19 @@ class ClipboardItemCard: NSView {
     }
 }
 
+// Add this class before the HistoryWindowController class
+class EditableTextView: NSTextView {
+    override func keyDown(with event: NSEvent) {
+        // Check if it's Return/Enter key
+        if event.keyCode == 36 {
+            // Insert a line break instead of submitting the dialog
+            self.insertText("\n", replacementRange: self.selectedRange)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+}
+
 class HistoryWindowController: NSWindowController {
     private var items: [ClipboardItem] = []
     private var scrollView: NSScrollView!
@@ -787,6 +800,11 @@ class HistoryWindowController: NSWindowController {
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
         let keyCode = event.keyCode
         
+        // Skip handling if an alert is being shown (for editing)
+        if NSApp.modalWindow != nil {
+            return false
+        }
+        
         // Get filtered items based on current tab
         let displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
         
@@ -968,7 +986,7 @@ class HistoryWindowController: NSWindowController {
         scrollView.borderType = .bezelBorder
         
         // Use a text view instead for better multiline editing
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         textView.string = item.content
         textView.isEditable = true
         textView.isSelectable = true
