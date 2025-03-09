@@ -316,6 +316,12 @@ class ClipboardItemCard: NSView {
             textColor = NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor
         }
         
+        // Guard against empty content
+        guard !item.content.isEmpty else {
+            contentLabel.stringValue = ""
+            return
+        }
+        
         attributedString.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: 0, length: item.content.count))
         
         // Find all occurrences of search text (case insensitive)
@@ -1251,13 +1257,16 @@ class HistoryWindowController: NSWindowController {
         var yPosition = Int(containerView.frame.height) - prefs.cardHeight - 10
         
         for (index, item) in displayItems.enumerated() {
+            // Add safety check for item content
+            guard item.content.count > 0 || item.isImage else { continue }
+            
             let cardFrame = NSRect(x: 20, y: CGFloat(yPosition), width: containerView.bounds.width - 40, height: CGFloat(prefs.cardHeight))
             let card = ClipboardItemCard(frame: cardFrame, item: item) { [weak self] selectedItem in
                 self?.itemSelected(selectedItem)
             }
             card.autoresizingMask = [NSView.AutoresizingMask.width]
             
-            // Set search text for highlighting
+            // Set search text for highlighting - use empty string if nil to avoid crashes
             card.searchText = searchText
             
             // Set selection state for the card
@@ -1844,15 +1853,32 @@ class HistoryWindowController: NSWindowController {
             searchText = ""
             filteredItems = items
             updateCardViews()
+            
+            // Hide any loading indicators
+            showSearchLoading(false)
             return
         }
         
         // Otherwise, debounce the search with a short delay
-        perform(#selector(performSearch(_:)), with: sender, afterDelay: 0.2)
+        // Use a copy of the search field to avoid potential memory issues
+        let searchFieldCopy = sender
+        perform(#selector(performSearch(_:)), with: searchFieldCopy, afterDelay: 0.2)
     }
     
     @objc private func performSearch(_ sender: NSSearchField) {
+        // Add safety check for nil sender
+        guard sender != nil else { return }
+        
         let newSearchText = sender.stringValue
+        
+        // Add safety check for empty search text
+        if newSearchText.isEmpty {
+            searchText = ""
+            filteredItems = items
+            updateCardViews()
+            showSearchLoading(false)
+            return
+        }
         
         // Only update if the search text has actually changed
         if searchText != newSearchText {
@@ -1878,6 +1904,18 @@ class HistoryWindowController: NSWindowController {
             guard let self = self else { return }
             
             let searchLower = self.searchText.lowercased()
+            
+            // Add safety check for empty search text
+            if searchLower.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.filteredItems = self.items
+                    self.updateCardViews()
+                    self.showSearchLoading(false)
+                }
+                return
+            }
+            
             let filtered = self.items.filter { item in
                 if self.currentTab == 1 && !item.isPinned {
                     return false
@@ -1887,6 +1925,8 @@ class HistoryWindowController: NSWindowController {
                     // For images, we can only search by timestamp or other metadata
                     return true
                 } else {
+                    // Add safety check for empty content
+                    guard !item.content.isEmpty else { return false }
                     return item.content.lowercased().contains(searchLower)
                 }
             }
