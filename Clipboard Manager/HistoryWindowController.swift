@@ -1,6 +1,7 @@
 import Cocoa
 import UserNotifications
 import ApplicationServices
+import UniformTypeIdentifiers
 
 class ClipboardItemCard: NSView {
     private var contentLabel: NSTextField!
@@ -85,6 +86,25 @@ class ClipboardItemCard: NSView {
             saveButton?.action = #selector(saveButtonClicked)
             
             if let saveButton = saveButton {
+                // Make the save button more visible
+                saveButton.contentTintColor = NSColor.systemBlue
+                
+                // Add hover effect for better visibility
+                saveButton.wantsLayer = true
+                saveButton.layer?.cornerRadius = 4
+                
+                // Add tooltip
+                saveButton.toolTip = "Save image as file (PNG, JPEG)"
+                
+                // Add tracking area for hover effects
+                let trackingArea = NSTrackingArea(
+                    rect: saveButton.bounds,
+                    options: [.mouseEnteredAndExited, .activeAlways],
+                    owner: self,
+                    userInfo: ["button": "save"]
+                )
+                saveButton.addTrackingArea(trackingArea)
+                
                 addSubview(saveButton)
             }
         } else {
@@ -120,6 +140,39 @@ class ClipboardItemCard: NSView {
             
             // Make sure double-click takes precedence
             doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+            
+            // Add save button for text items (similar to image items)
+            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            saveButton?.bezelStyle = .inline
+            saveButton?.isBordered = false
+            saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
+            saveButton?.imagePosition = .imageOnly
+            saveButton?.autoresizingMask = [.minXMargin, .minYMargin]
+            saveButton?.target = self
+            saveButton?.action = #selector(saveTextButtonClicked)
+            
+            if let saveButton = saveButton {
+                // Make the save button more visible for text items
+                saveButton.contentTintColor = NSColor.systemBlue
+                
+                // Add hover effect for better visibility
+                saveButton.wantsLayer = true
+                saveButton.layer?.cornerRadius = 4
+                
+                // Add tooltip
+                saveButton.toolTip = "Save text as file (TXT, RTF, DOC)"
+                
+                // Add tracking area for hover effects
+                let trackingArea = NSTrackingArea(
+                    rect: saveButton.bounds,
+                    options: [.mouseEnteredAndExited, .activeAlways],
+                    owner: self,
+                    userInfo: ["button": "save"]
+                )
+                saveButton.addTrackingArea(trackingArea)
+                
+                addSubview(saveButton)
+            }
         }
         
         // Pin button
@@ -323,11 +376,6 @@ class ClipboardItemCard: NSView {
             let viewItem = NSMenuItem(title: "View Image", action: #selector(viewImageClicked), keyEquivalent: "")
             viewItem.target = self
             menu.addItem(viewItem)
-            
-            // Add save options for images
-            let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(saveButtonClicked(_:)), keyEquivalent: "")
-            saveAsItem.target = self
-            menu.addItem(saveAsItem)
         } else {
             let editItem = NSMenuItem(title: "Edit", action: #selector(editItemClicked), keyEquivalent: "")
             editItem.target = self
@@ -386,7 +434,10 @@ class ClipboardItemCard: NSView {
         // Prevent event propagation
         NSApp.preventWindowOrdering()
         
-        guard item.isImage, let image = item.getImage() else { return }
+        guard item.isImage, item.getImage() != nil else { return }
+        
+        // Ensure the app is activated
+        NSApp.activate(ignoringOtherApps: true)
         
         // Create save menu
         let menu = NSMenu()
@@ -413,45 +464,279 @@ class ClipboardItemCard: NSView {
         saveImage(fileType: .jpeg)
     }
     
-    private func saveImage(fileType: NSBitmapImageRep.FileType) {
-        guard item.isImage, let image = item.getImage() else { return }
+    @objc private func saveTextButtonClicked(_ sender: NSButton) {
+        // Prevent event propagation
+        NSApp.preventWindowOrdering()
+        
+        guard !item.isImage else { return }
+        
+        // Ensure the app is activated
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Create save menu
+        let menu = NSMenu()
+        
+        // Add "Save as TXT" option
+        let txtItem = NSMenuItem(title: "Save as TXT", action: #selector(saveAsTXT), keyEquivalent: "")
+        txtItem.target = self
+        menu.addItem(txtItem)
+        
+        // Add "Save as RTF" option
+        let rtfItem = NSMenuItem(title: "Save as RTF", action: #selector(saveAsRTF), keyEquivalent: "")
+        rtfItem.target = self
+        menu.addItem(rtfItem)
+        
+        // Add "Save as DOC" option
+        let docItem = NSMenuItem(title: "Save as DOC", action: #selector(saveAsDOC), keyEquivalent: "")
+        docItem.target = self
+        menu.addItem(docItem)
+        
+        // Show menu
+        NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: sender)
+    }
+    
+    @objc private func saveAsTXT() {
+        saveText(fileExtension: "txt", fileType: "Text File")
+    }
+    
+    @objc private func saveAsRTF() {
+        saveText(fileExtension: "rtf", fileType: "Rich Text Format")
+    }
+    
+    @objc private func saveAsDOC() {
+        saveText(fileExtension: "doc", fileType: "Word Document")
+    }
+    
+    // Helper method to get the window from the view hierarchy
+    private func findParentWindow() -> NSWindow? {
+        // Try to get window from view hierarchy
+        var responder: NSResponder? = self
+        while let nextResponder = responder?.nextResponder {
+            if let window = nextResponder as? NSWindow {
+                return window
+            }
+            responder = nextResponder
+        }
+        
+        // If not found in responder chain, try to get from app's windows
+        if let window = NSApp.windows.first(where: { $0.isVisible }) {
+            return window
+        }
+        
+        // If still not found, try to get the key window
+        return NSApp.keyWindow
+    }
+    
+    private func saveText(fileExtension: String, fileType: String) {
+        guard !item.isImage else { return }
+        
+        print("Saving text as \(fileExtension) file...")
+        
+        // Ensure the app is activated
+        NSApp.activate(ignoringOtherApps: true)
         
         // Create save panel
         let savePanel = NSSavePanel()
-        savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
+        
+        // Use UTType instead of file extension strings
+        if #available(macOS 11.0, *) {
+            // Use modern UTType API
+            switch fileExtension {
+            case "txt":
+                if let txtType = UTType(filenameExtension: "txt") {
+                    print("Using UTType for txt: \(txtType.identifier)")
+                    savePanel.allowedContentTypes = [txtType]
+                } else {
+                    print("Falling back to allowedFileTypes for txt")
+                    savePanel.allowedFileTypes = ["txt"]
+                }
+            case "rtf":
+                if let rtfType = UTType(filenameExtension: "rtf") {
+                    print("Using UTType for rtf: \(rtfType.identifier)")
+                    savePanel.allowedContentTypes = [rtfType]
+                } else {
+                    print("Falling back to allowedFileTypes for rtf")
+                    savePanel.allowedFileTypes = ["rtf"]
+                }
+            case "doc":
+                if let docType = UTType(filenameExtension: "doc") {
+                    print("Using UTType for doc: \(docType.identifier)")
+                    savePanel.allowedContentTypes = [docType]
+                } else {
+                    print("Falling back to allowedFileTypes for doc")
+                    savePanel.allowedFileTypes = ["doc"]
+                }
+            default:
+                if let txtType = UTType(filenameExtension: "txt") {
+                    print("Using UTType for default txt: \(txtType.identifier)")
+                    savePanel.allowedContentTypes = [txtType]
+                } else {
+                    print("Falling back to allowedFileTypes for default txt")
+                    savePanel.allowedFileTypes = ["txt"]
+                }
+            }
+        } else {
+            // Fallback for older macOS versions
+            print("Using older macOS API with allowedFileTypes")
+            savePanel.allowedFileTypes = [fileExtension]
+        }
+        
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        savePanel.title = "Save Text"
+        savePanel.message = "Choose a location to save the text"
+        savePanel.nameFieldStringValue = "clipboard_text"
+        
+        print("Showing save panel...")
+        
+        // Try to find the main window
+        let mainWindow = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first
+        print("Main window found: \(mainWindow != nil)")
+        
+        // Always use runModal as a fallback since it's more reliable
+        print("Using runModal for save panel")
+        let response = savePanel.runModal()
+        print("Save panel response (runModal): \(response == .OK ? "OK" : "Cancel")")
+        
+        if response == .OK, let url = savePanel.url {
+            print("Selected save location: \(url.path)")
+            
+            do {
+                if fileExtension == "doc" {
+                    print("Creating DOC file...")
+                    // Create a proper DOC file using NSAttributedString with document attributes
+                    let attributedString = NSAttributedString(string: self.item.content)
+                    let documentAttributes: [NSAttributedString.DocumentAttributeKey: Any] = [
+                        .documentType: NSAttributedString.DocumentType.wordML,
+                        .characterEncoding: String.Encoding.utf8.rawValue
+                    ]
+                    
+                    // Write to file with document attributes
+                    try attributedString.fileWrapper(from: NSRange(location: 0, length: attributedString.length),
+                                                    documentAttributes: documentAttributes)
+                        .write(to: url, options: .atomic, originalContentsURL: nil)
+                    print("DOC file saved successfully")
+                } else if fileExtension == "rtf" {
+                    print("Creating RTF file...")
+                    // Create RTF file
+                    let attributedString = NSAttributedString(string: self.item.content)
+                    let documentAttributes: [NSAttributedString.DocumentAttributeKey: Any] = [
+                        .documentType: NSAttributedString.DocumentType.rtf,
+                        .characterEncoding: String.Encoding.utf8.rawValue
+                    ]
+                    
+                    // Write to file with RTF attributes
+                    let rtfData = try attributedString.data(from: NSRange(location: 0, length: attributedString.length),
+                                                          documentAttributes: documentAttributes)
+                    try rtfData.write(to: url)
+                    print("RTF file saved successfully")
+                } else {
+                    print("Creating TXT file...")
+                    // For TXT files, just write the plain text
+                    try self.item.content.write(to: url, atomically: true, encoding: .utf8)
+                    print("TXT file saved successfully")
+                }
+            } catch {
+                print("Error saving file: \(error.localizedDescription)")
+                // Show error alert
+                let alert = NSAlert()
+                alert.messageText = "Error Saving Text"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+    
+    private func saveImage(fileType: NSBitmapImageRep.FileType) {
+        guard item.isImage, let image = item.getImage() else { return }
+        
+        print("Saving image as \(fileType == .png ? "PNG" : "JPEG") file...")
+        
+        // Ensure the app is activated
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Create save panel
+        let savePanel = NSSavePanel()
+        // Use UTType instead of file extension strings
+        if #available(macOS 11.0, *) {
+            // Use modern UTType API
+            if fileType == .png {
+                if let pngType = UTType(filenameExtension: "png") {
+                    print("Using UTType for png: \(pngType.identifier)")
+                    savePanel.allowedContentTypes = [pngType]
+                } else {
+                    print("Falling back to allowedFileTypes for png")
+                    savePanel.allowedFileTypes = ["png"]
+                }
+            } else {
+                if let jpegType = UTType(filenameExtension: "jpeg") {
+                    print("Using UTType for jpeg: \(jpegType.identifier)")
+                    savePanel.allowedContentTypes = [jpegType]
+                } else {
+                    print("Falling back to allowedFileTypes for jpeg")
+                    savePanel.allowedFileTypes = ["jpg", "jpeg"]
+                }
+            }
+        } else {
+            // Fallback for older macOS versions
+            print("Using older macOS API with allowedFileTypes")
+            savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
+        }
         savePanel.canCreateDirectories = true
         savePanel.isExtensionHidden = false
         savePanel.title = "Save Image"
         savePanel.message = "Choose a location to save the image"
         savePanel.nameFieldStringValue = "clipboard_image"
         
-        savePanel.beginSheetModal(for: self.window!) { response in
-            if response == .OK, let url = savePanel.url {
-                // Convert image to data
-                guard let tiffData = image.tiffRepresentation,
-                      let bitmapImage = NSBitmapImageRep(data: tiffData) else { return }
-                
-                let imageData: Data?
-                if fileType == .png {
-                    imageData = bitmapImage.representation(using: .png, properties: [:])
-                } else {
-                    imageData = bitmapImage.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+        print("Showing save panel for image...")
+        
+        // Try to find the main window
+        let mainWindow = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first
+        print("Main window found: \(mainWindow != nil)")
+        
+        // Always use runModal as a fallback since it's more reliable
+        print("Using runModal for save panel")
+        let response = savePanel.runModal()
+        print("Save panel response (runModal): \(response == .OK ? "OK" : "Cancel")")
+        
+        if response == .OK, let url = savePanel.url {
+            print("Selected save location: \(url.path)")
+            
+            // Convert image to data
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmapImage = NSBitmapImageRep(data: tiffData) else {
+                print("Failed to create bitmap image representation")
+                return
+            }
+            
+            let imageData: Data?
+            if fileType == .png {
+                print("Creating PNG data...")
+                imageData = bitmapImage.representation(using: .png, properties: [:])
+            } else {
+                print("Creating JPEG data...")
+                imageData = bitmapImage.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+            }
+            
+            // Save to file
+            if let imageData = imageData {
+                do {
+                    try imageData.write(to: url)
+                    print("Image saved successfully")
+                } catch {
+                    print("Error saving image: \(error.localizedDescription)")
+                    // Show error alert
+                    let alert = NSAlert()
+                    alert.messageText = "Error Saving Image"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
                 }
-                
-                // Save to file
-                if let imageData = imageData {
-                    do {
-                        try imageData.write(to: url)
-                    } catch {
-                        // Show error alert
-                        let alert = NSAlert()
-                        alert.messageText = "Error Saving Image"
-                        alert.informativeText = error.localizedDescription
-                        alert.alertStyle = .warning
-                        alert.addButton(withTitle: "OK")
-                        alert.runModal()
-                    }
-                }
+            } else {
+                print("Failed to create image data")
             }
         }
     }
@@ -482,6 +767,16 @@ class ClipboardItemCard: NSView {
     override func mouseEntered(with event: NSEvent) {
         let prefs = Preferences.shared
         
+        // Check if this is for a specific button
+        if let userInfo = event.trackingArea?.userInfo as? [String: String],
+           let buttonType = userInfo["button"], buttonType == "save" {
+            // This is for the save button
+            if let button = event.trackingArea?.owner as? NSButton {
+                button.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
+            }
+            return
+        }
+        
         // Apply hover effect based on appearance settings
         let backgroundColor: NSColor
         
@@ -504,6 +799,16 @@ class ClipboardItemCard: NSView {
     }
     
     override func mouseExited(with event: NSEvent) {
+        // Check if this is for a specific button
+        if let userInfo = event.trackingArea?.userInfo as? [String: String],
+           let buttonType = userInfo["button"], buttonType == "save" {
+            // This is for the save button
+            if let button = event.trackingArea?.owner as? NSButton {
+                button.layer?.backgroundColor = NSColor.clear.cgColor
+            }
+            return
+        }
+        
         applyPreferences()
     }
     
