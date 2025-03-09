@@ -1704,28 +1704,45 @@ class HistoryWindowController: NSWindowController {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         
-        // Add a text field for editing
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        textField.stringValue = item.content
-        textField.isEditable = true
-        textField.isSelectable = true
-        textField.isBordered = true
-        textField.drawsBackground = true
-        textField.font = NSFont.systemFont(ofSize: 14)
-        
-        // Create a scroll view to contain the text field for long content
+        // Create a scroll view to contain the text view for long content
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .bezelBorder
         
-        // Use a text view instead for better multiline editing
+        // Use a text view for better multiline editing
         let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        textView.string = item.content
+        
+        // Check if we have rich text data
+        if item.isRichText, let richTextData = item.richTextData {
+            do {
+                // Create attributed string from rich text data
+                let attributedString = try NSAttributedString(
+                    data: richTextData,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil
+                )
+                
+                // Set the attributed string to the text view
+                textView.textStorage?.setAttributedString(attributedString)
+                
+                // Enable rich text editing
+                textView.isRichText = true
+            } catch {
+                print("Error displaying rich text in editor: \(error)")
+                // Fall back to plain text if there's an error
+                textView.string = item.content
+                textView.isRichText = false
+            }
+        } else {
+            // No rich text data, just set plain text
+            textView.string = item.content
+            textView.isRichText = false
+        }
+        
         textView.isEditable = true
         textView.isSelectable = true
-        textView.isRichText = false
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
@@ -1746,13 +1763,43 @@ class HistoryWindowController: NSWindowController {
         
         if response == .alertFirstButtonReturn {
             // User clicked Save
-            let updatedContent = textView.string
+            let updatedContent: String
+            var updatedRichTextData: Data? = nil
+            
+            // Check if we're dealing with rich text
+            if textView.isRichText {
+                // Get the attributed string from the text view
+                let attributedString = textView.attributedString()
+                
+                // Convert to plain text for the content field
+                updatedContent = attributedString.string
+                
+                // Convert to RTF data for storage
+                do {
+                    updatedRichTextData = try attributedString.data(
+                        from: NSRange(location: 0, length: attributedString.length),
+                        documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                    )
+                } catch {
+                    print("Error converting rich text to data: \(error)")
+                }
+            } else {
+                // Just get the plain text
+                updatedContent = textView.string
+            }
             
             // Update the item in the clipboard manager
+            var userInfo: [String: Any] = ["itemId": itemId, "content": updatedContent]
+            
+            // Add rich text data if available
+            if let richTextData = updatedRichTextData {
+                userInfo["richTextData"] = richTextData
+            }
+            
             NotificationCenter.default.post(
                 name: NSNotification.Name("UpdateClipboardItem"),
                 object: nil,
-                userInfo: ["itemId": itemId, "content": updatedContent]
+                userInfo: userInfo
             )
         }
         

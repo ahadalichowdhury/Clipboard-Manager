@@ -437,7 +437,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // Check if we should auto-paste
             let prefs = Preferences.shared
             if prefs.autoPaste {
-                self.simulatePasteKeystroke()
+                // Pass information about whether this is a rich text item
+                self.simulatePasteKeystroke(isRichText: item.isRichText || item.hasMultipleFormats)
             } else {
                 // Show a notification to manually paste
                 let notification = NSUserNotification()
@@ -470,8 +471,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func simulatePasteKeystroke() {
-        // Check if accessibility permissions are granted
+    private func simulatePasteKeystroke(isRichText: Bool = false) {
+        Logger.shared.log("Simulating paste keystroke" + (isRichText ? " (Rich Text)" : ""))
+        
         guard AXIsProcessTrusted() else {
             Logger.shared.log("Cannot simulate paste: accessibility permissions not granted")
             // Request permissions if not granted
@@ -479,8 +481,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
         
-        // Use the centralized PasteManager
-        PasteManager.shared.paste()
+        // Use the centralized PasteManager with rich text information
+        PasteManager.shared.paste(isRichText: isRichText)
     }
 
     private func checkAccessibilityPermissions() {

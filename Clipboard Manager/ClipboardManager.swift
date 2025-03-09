@@ -7,15 +7,27 @@ struct ClipboardItem: Codable, Identifiable {
     let timestamp: Date
     var isPinned: Bool
     var imageData: Data?
+    var richTextData: Data?
+    var pasteboardItems: [PasteboardItemData]?
     
     var isImage: Bool {
         return imageData != nil
     }
     
-    init(content: String, imageData: Data? = nil, isPinned: Bool = false) {
+    var isRichText: Bool {
+        return richTextData != nil
+    }
+    
+    var hasMultipleFormats: Bool {
+        return pasteboardItems != nil && pasteboardItems!.count > 0
+    }
+    
+    init(content: String, imageData: Data? = nil, richTextData: Data? = nil, pasteboardItems: [PasteboardItemData]? = nil, isPinned: Bool = false) {
         self.id = UUID()
         self.content = content
         self.imageData = imageData
+        self.richTextData = richTextData
+        self.pasteboardItems = pasteboardItems
         self.timestamp = Date()
         self.isPinned = isPinned
     }
@@ -27,7 +39,18 @@ struct ClipboardItem: Codable, Identifiable {
     
     // Custom encoding for Codable
     enum CodingKeys: String, CodingKey {
-        case id, content, timestamp, isPinned, imageData
+        case id, content, timestamp, isPinned, imageData, richTextData, pasteboardItems
+    }
+}
+
+// Structure to store pasteboard item data for multiple formats
+struct PasteboardItemData: Codable {
+    let type: String
+    let data: Data
+    
+    init(type: NSPasteboard.PasteboardType, data: Data) {
+        self.type = type.rawValue
+        self.data = data
     }
 }
 
@@ -35,10 +58,24 @@ class ClipboardManager {
     private var history: [ClipboardItem] = []
     private var lastContent: String = ""
     private var lastImageData: Data?
+    private var lastRichTextData: Data?
     private var timer: Timer?
     private let historyFilePath: URL
     private var notificationsEnabled = false
     private var ignoreNextClipboardChange = false
+    
+    // Common pasteboard types to capture
+    private let commonPasteboardTypes: [NSPasteboard.PasteboardType] = [
+        .rtf,
+        .rtfd,
+        .html,
+        .string,
+        .tiff,
+        .png,
+        .pdf,
+        .fileURL,
+        .URL
+    ]
     
     init() {
         print("Initializing ClipboardManager...")
@@ -62,7 +99,7 @@ class ClipboardManager {
         
         print("Clipboard history loaded with \(history.count) items")
         for (index, item) in history.enumerated() {
-            print("Item \(index): \(item.content.prefix(30))... Pinned: \(item.isPinned) IsImage: \(item.isImage)")
+            print("Item \(index): \(item.content.prefix(30))... Pinned: \(item.isPinned) IsImage: \(item.isImage) IsRichText: \(item.isRichText)")
         }
         
         // Register for notifications
@@ -242,7 +279,52 @@ class ClipboardManager {
     private func checkClipboard() {
         let pasteboard = NSPasteboard.general
         
-        // Check for image first
+        // Capture all available types in the pasteboard
+        let availableTypes = pasteboard.types ?? []
+        var pasteboardItems: [PasteboardItemData] = []
+        
+        // Check if we have multiple formats to preserve
+        if availableTypes.count > 1 {
+            for type in availableTypes {
+                if let data = pasteboard.data(forType: type) {
+                    pasteboardItems.append(PasteboardItemData(type: type, data: data))
+                }
+            }
+        }
+        
+        // Check for rich text first
+        if let rtfData = pasteboard.data(forType: .rtf) ?? pasteboard.data(forType: .rtfd) {
+            // Skip if rich text hasn't changed
+            if let lastRichTextData = self.lastRichTextData, lastRichTextData == rtfData {
+                return
+            }
+            
+            // Update last rich text data
+            self.lastRichTextData = rtfData
+            
+            // Get plain text representation for display
+            let plainText = pasteboard.string(forType: .string) ?? "[Rich Text]"
+            
+            print("New clipboard rich text detected: \(plainText.prefix(30))...")
+            
+            // Add to history
+            let item = ClipboardItem(
+                content: plainText,
+                richTextData: rtfData,
+                pasteboardItems: pasteboardItems.isEmpty ? nil : pasteboardItems
+            )
+            addToHistory(item)
+            
+            // Show notification only if preferences allow and permissions are granted
+            let prefs = Preferences.shared
+            if prefs.showNotifications && notificationsEnabled {
+                showNotification(for: item)
+            }
+            
+            return
+        }
+        
+        // Check for image next
         if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
             // Skip if image hasn't changed
             if let lastImageData = self.lastImageData, lastImageData == imageData {
@@ -271,7 +353,11 @@ class ClipboardManager {
             print("New clipboard image detected: \(description)")
             
             // Add to history
-            let item = ClipboardItem(content: description, imageData: imageData)
+            let item = ClipboardItem(
+                content: description, 
+                imageData: imageData,
+                pasteboardItems: pasteboardItems.isEmpty ? nil : pasteboardItems
+            )
             addToHistory(item)
             
             // Show notification only if preferences allow and permissions are granted
@@ -283,7 +369,7 @@ class ClipboardManager {
             return
         }
         
-        // If no image, check for text
+        // If no rich text or image, check for plain text
         if let text = pasteboard.string(forType: .string) {
             // Skip if content hasn't changed or is empty
             if text.isEmpty || text == lastContent {
@@ -311,7 +397,10 @@ class ClipboardManager {
             lastContent = text
             
             // Add to history
-            let item = ClipboardItem(content: text)
+            let item = ClipboardItem(
+                content: text,
+                pasteboardItems: pasteboardItems.isEmpty ? nil : pasteboardItems
+            )
             addToHistory(item)
             
             // Show notification only if preferences allow and permissions are granted
@@ -325,7 +414,12 @@ class ClipboardManager {
                 print("Auto-paste is enabled, attempting to paste...")
                 // Use a slight delay to ensure the clipboard content is ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    PasteManager.shared.paste()
+                    // Pass the rich text flag if this is a rich text item
+                    if item.isRichText || item.hasMultipleFormats {
+                        PasteManager.shared.paste(isRichText: true)
+                    } else {
+                        PasteManager.shared.paste()
+                    }
                 }
             }
         }
@@ -384,18 +478,40 @@ class ClipboardManager {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
-        if item.isImage, let image = item.getImage() {
+        // If we have multiple formats, restore all of them
+        if item.hasMultipleFormats, let pasteboardItems = item.pasteboardItems {
+            for pbItem in pasteboardItems {
+                // Create the pasteboard type from the string
+                let type = NSPasteboard.PasteboardType(rawValue: pbItem.type)
+                pasteboard.setData(pbItem.data, forType: type)
+            }
+        }
+        // If it's a rich text item
+        else if item.isRichText, let richTextData = item.richTextData {
+            // Set rich text data
+            pasteboard.setData(richTextData, forType: .rtf)
+            
+            // Also set plain text for apps that don't support rich text
+            pasteboard.setString(item.content, forType: .string)
+            
+            // Update last rich text data to prevent re-adding
+            lastRichTextData = richTextData
+            lastContent = item.content
+        }
+        // If it's an image
+        else if item.isImage, let image = item.getImage() {
             // Copy image to clipboard
             pasteboard.writeObjects([image])
-        } else {
+            
+            // Update last image data to prevent re-adding
+            lastImageData = item.imageData
+        }
+        // If it's plain text
+        else {
             // Copy text to clipboard
             pasteboard.setString(item.content, forType: .string)
-        }
-        
-        // Update last content/image to prevent re-adding
-        if item.isImage {
-            lastImageData = item.imageData
-        } else {
+            
+            // Update last content to prevent re-adding
             lastContent = item.content
         }
         

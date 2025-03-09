@@ -5,6 +5,9 @@ import ApplicationServices
 class PasteManager {
     static let shared = PasteManager()
     
+    // Add a property to track if we're dealing with rich text
+    private var isRichTextPaste = false
+    
     private init() {
         // Run diagnostics on initialization
         DispatchQueue.global(qos: .background).async {
@@ -13,8 +16,11 @@ class PasteManager {
     }
     
     // Main paste method that tries all available strategies
-    func paste() {
-        Logger.shared.log("PasteManager: Starting paste operation")
+    func paste(isRichText: Bool = false) {
+        Logger.shared.log("PasteManager: Starting paste operation" + (isRichText ? " (Rich Text)" : ""))
+        
+        // Set the rich text flag
+        self.isRichTextPaste = isRichText
         
         // Check for accessibility permissions
         guard AXIsProcessTrusted() else {
@@ -435,5 +441,45 @@ class PasteManager {
         notification.soundName = NSUserNotificationDefaultSoundName
         
         NSUserNotificationCenter.default.deliver(notification)
+    }
+    
+    // Method to check if the current application supports rich text pasting
+    private func currentAppSupportsRichText() -> Bool {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            return false
+        }
+        
+        // List of apps known to support rich text pasting
+        let richTextApps = [
+            "com.apple.TextEdit",
+            "com.apple.Notes",
+            "com.apple.mail",
+            "com.microsoft.Word",
+            "com.microsoft.Outlook",
+            "com.google.Chrome",
+            "com.apple.Safari",
+            "com.apple.Pages",
+            "com.apple.iWork.Pages",
+            "com.apple.finder" // For text fields in Finder
+        ]
+        
+        if let bundleID = frontApp.bundleIdentifier, richTextApps.contains(bundleID) {
+            return true
+        }
+        
+        // For other apps, we'll assume they support rich text if they're not terminal apps
+        let terminalApps = [
+            "com.apple.Terminal",
+            "com.googlecode.iterm2",
+            "co.zeit.hyper",
+            "com.microsoft.VSCode"
+        ]
+        
+        if let bundleID = frontApp.bundleIdentifier, terminalApps.contains(bundleID) {
+            return false
+        }
+        
+        // Default to true for most GUI apps
+        return true
     }
 } 
