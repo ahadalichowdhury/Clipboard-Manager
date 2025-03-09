@@ -1276,6 +1276,17 @@ class PreferencesWindowController: NSWindowController {
         prefs.fullClipboardTransparency = fullClipboardTransparencyCheckbox.state == .on
         prefs.windowBackgroundColor = windowBackgroundColorPicker.color.toHex()
         
+        // Apply appearance to this window as well
+        if let window = self.window {
+            if prefs.useSystemAppearance {
+                window.appearance = nil // Use system appearance
+            } else if prefs.darkMode {
+                window.appearance = NSAppearance(named: .darkAqua)
+            } else {
+                window.appearance = NSAppearance(named: .aqua)
+            }
+        }
+        
         // Notify that preferences have changed to update the clipboard window in real-time
         NotificationCenter.default.post(name: NSNotification.Name("PreferencesChanged"), object: nil)
         

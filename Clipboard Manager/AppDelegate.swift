@@ -23,6 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Ensure we're using accessory activation policy
         NSApp.setActivationPolicy(.accessory)
         
+        // Apply appearance settings based on preferences
+        applyAppearanceSettings()
+        
         // Set up notification center delegate - safely handle this to prevent crashes
         do {
             try setupNotifications()
@@ -245,6 +248,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // Create and show the history window
         historyWindow = HistoryWindowController(items: items)
+        
+        // Apply appearance settings to the history window
+        if let window = historyWindow?.window {
+            let prefs = Preferences.shared
+            if prefs.useSystemAppearance {
+                window.appearance = nil // Use system appearance
+            } else if prefs.darkMode {
+                window.appearance = NSAppearance(named: .darkAqua)
+            } else {
+                window.appearance = NSAppearance(named: .aqua)
+            }
+        }
+        
         historyWindow?.showWindow(nil)
         safelyActivateApp()
         
@@ -312,6 +328,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if let window = historyWindow, window.window?.isVisible == true {
             // Instead of creating a new window, just update the items in the existing window
             window.updateItems(getClipboardHistory())
+            
+            // Apply appearance settings to the history window
+            if let historyWindowObj = window.window {
+                let prefs = Preferences.shared
+                if prefs.useSystemAppearance {
+                    historyWindowObj.appearance = nil // Use system appearance
+                } else if prefs.darkMode {
+                    historyWindowObj.appearance = NSAppearance(named: .darkAqua)
+                } else {
+                    historyWindowObj.appearance = NSAppearance(named: .aqua)
+                }
+            }
         }
         
         // Update hotkey if needed
@@ -319,6 +347,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // Update login item status
         updateLoginItemStatus()
+        
+        // Apply appearance settings
+        applyAppearanceSettings()
+    }
+    
+    private func applyAppearanceSettings() {
+        let prefs = Preferences.shared
+        
+        // Set the app's appearance based on preferences
+        if prefs.useSystemAppearance {
+            NSApp.appearance = nil // Use system appearance
+        } else if prefs.darkMode {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        } else {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }
     }
     
     private func updateHotKey() {

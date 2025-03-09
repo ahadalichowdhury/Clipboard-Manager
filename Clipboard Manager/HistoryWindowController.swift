@@ -165,13 +165,22 @@ class ClipboardItemCard: NSView {
         // Create attributed string for highlighting
         let attributedString = NSMutableAttributedString(string: item.content)
         
-        // Apply the base text color
+        // Apply the base text color based on appearance settings
         let prefs = Preferences.shared
         let textColor: NSColor
-        if let color = NSColor.fromHex(prefs.textColor) {
-            textColor = color
+        
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            textColor = isDark ? 
+                (NSColor.fromHex("#FFFFFF") ?? NSColor.white) : 
+                (NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor)
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            textColor = NSColor.fromHex("#FFFFFF") ?? NSColor.white
         } else {
-            textColor = NSColor.labelColor
+            // Use light mode colors
+            textColor = NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor
         }
         
         attributedString.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: 0, length: item.content.count))
@@ -205,15 +214,27 @@ class ClipboardItemCard: NSView {
         }
     }
     
-    @objc private func applyPreferences() {
+    @objc func applyPreferences() {
         let prefs = Preferences.shared
         
-        // Apply background color
-        if let backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) {
-            layer?.backgroundColor = backgroundColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
+        // Apply background color based on dark mode setting
+        let backgroundColor: NSColor
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            backgroundColor = isDark ? 
+                (NSColor.fromHex("#333333") ?? NSColor.darkGray) : 
+                (NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor)
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            backgroundColor = NSColor.fromHex("#333333") ?? NSColor.darkGray
         } else {
-            layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
+            // Use light mode colors
+            backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor
         }
+        
+        // Apply the background color with alpha
+        layer?.backgroundColor = backgroundColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
         
         layer?.cornerRadius = 8
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.1).cgColor
@@ -239,11 +260,24 @@ class ClipboardItemCard: NSView {
         guard contentLabel != nil else { return }
         
         let prefs = Preferences.shared
-        if let textColor = NSColor.fromHex(prefs.textColor) {
-            contentLabel.textColor = textColor
+        
+        // Determine text color based on appearance settings
+        let textColor: NSColor
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            textColor = isDark ? 
+                (NSColor.fromHex("#FFFFFF") ?? NSColor.white) : 
+                (NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor)
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            textColor = NSColor.fromHex("#FFFFFF") ?? NSColor.white
         } else {
-            contentLabel.textColor = NSColor.labelColor
+            // Use light mode colors
+            textColor = NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor
         }
+        
+        contentLabel.textColor = textColor
     }
     
     @objc private func viewClicked() {
@@ -447,11 +481,26 @@ class ClipboardItemCard: NSView {
     
     override func mouseEntered(with event: NSEvent) {
         let prefs = Preferences.shared
-        if let backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) {
-            layer?.backgroundColor = backgroundColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha * 0.8)).cgColor
+        
+        // Apply hover effect based on appearance settings
+        let backgroundColor: NSColor
+        
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            backgroundColor = isDark ? 
+                (NSColor.fromHex("#444444") ?? NSColor.darkGray) : 
+                (NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor)
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            backgroundColor = NSColor.fromHex("#444444") ?? NSColor.darkGray
         } else {
-            layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
+            // Use light mode colors
+            backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor
         }
+        
+        // Apply the background color with a slightly different alpha for hover effect
+        layer?.backgroundColor = backgroundColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha * 0.8)).cgColor
     }
     
     override func mouseExited(with event: NSEvent) {
@@ -467,16 +516,30 @@ class ClipboardItemCard: NSView {
             // Create a selection indicator
             wantsLayer = true
             
-            // Apply a highlighted background color
-            if let backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) {
-                // Use a slightly brighter version of the background color
-                let brighterColor = backgroundColor.blended(withFraction: 0.3, of: NSColor.white) ?? backgroundColor
-                layer?.backgroundColor = brighterColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
-                
-                // Add a border
-                layer?.borderWidth = 2.0
-                layer?.borderColor = NSColor.systemBlue.withAlphaComponent(0.7).cgColor
+            // Apply a highlighted background color based on appearance settings
+            let backgroundColor: NSColor
+            
+            if prefs.useSystemAppearance {
+                // Use system appearance
+                let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                backgroundColor = isDark ? 
+                    (NSColor.fromHex("#444444") ?? NSColor.darkGray) : 
+                    (NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor)
+            } else if prefs.darkMode {
+                // Use dark mode colors
+                backgroundColor = NSColor.fromHex("#444444") ?? NSColor.darkGray
+            } else {
+                // Use light mode colors
+                backgroundColor = NSColor.fromHex(prefs.cardBackgroundColor) ?? NSColor.controlBackgroundColor
             }
+            
+            // Use a slightly brighter version of the background color
+            let brighterColor = backgroundColor.blended(withFraction: 0.3, of: NSColor.white) ?? backgroundColor
+            layer?.backgroundColor = brighterColor.withAlphaComponent(CGFloat(prefs.cardBackgroundAlpha)).cgColor
+            
+            // Add a border
+            layer?.borderWidth = 2.0
+            layer?.borderColor = NSColor.systemBlue.withAlphaComponent(0.7).cgColor
         } else {
             // Reset to normal appearance
             applyPreferences()
@@ -542,8 +605,31 @@ class HistoryWindowController: NSWindowController {
         window.title = "Clipboard"
         window.titlebarAppearsTransparent = true
         
-        // Apply window background color from preferences
-        window.backgroundColor = prefs.windowBackgroundNSColor()
+        // Apply window background color based on appearance settings
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                window.backgroundColor = NSColor.fromHex("#222222") ?? NSColor.darkGray
+            } else {
+                window.backgroundColor = prefs.windowBackgroundNSColor()
+            }
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            window.backgroundColor = NSColor.fromHex("#222222") ?? NSColor.darkGray
+        } else {
+            // Use light mode colors
+            window.backgroundColor = prefs.windowBackgroundNSColor()
+        }
+        
+        // Apply appearance settings
+        if prefs.useSystemAppearance {
+            window.appearance = nil // Use system appearance
+        } else if prefs.darkMode {
+            window.appearance = NSAppearance(named: .darkAqua)
+        } else {
+            window.appearance = NSAppearance(named: .aqua)
+        }
         
         // Make the window appear on top of other applications
         window.level = .floating
@@ -782,8 +868,22 @@ class HistoryWindowController: NSWindowController {
         // Get preferences
         let prefs = Preferences.shared
         
-        // Apply window background color
-        window.backgroundColor = prefs.windowBackgroundNSColor()
+        // Apply window background color based on appearance settings
+        if prefs.useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                window.backgroundColor = NSColor.fromHex("#222222") ?? NSColor.darkGray
+            } else {
+                window.backgroundColor = prefs.windowBackgroundNSColor()
+            }
+        } else if prefs.darkMode {
+            // Use dark mode colors
+            window.backgroundColor = NSColor.fromHex("#222222") ?? NSColor.darkGray
+        } else {
+            // Use light mode colors
+            window.backgroundColor = prefs.windowBackgroundNSColor()
+        }
         
         // Apply transparency if enabled
         if prefs.fullClipboardTransparency {
@@ -793,7 +893,21 @@ class HistoryWindowController: NSWindowController {
             window.isOpaque = true
         }
         
-        // Update card views
+        // Apply appearance settings
+        if prefs.useSystemAppearance {
+            window.appearance = nil // Use system appearance
+        } else if prefs.darkMode {
+            window.appearance = NSAppearance(named: .darkAqua)
+        } else {
+            window.appearance = NSAppearance(named: .aqua)
+        }
+        
+        // Force update all card views to apply new appearance settings
+        for cardView in cardViews {
+            cardView.applyPreferences()
+        }
+        
+        // Update card views layout
         updateCardViews()
     }
     

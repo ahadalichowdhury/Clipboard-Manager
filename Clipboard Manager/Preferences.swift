@@ -63,7 +63,21 @@ class Preferences: Codable {
     }
     
     func windowBackgroundNSColor() -> NSColor {
-        return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+        if useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                return NSColor.fromHex("#222222") ?? NSColor.darkGray
+            } else {
+                return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+            }
+        } else if darkMode {
+            // Use dark mode colors
+            return NSColor.fromHex("#222222") ?? NSColor.darkGray
+        } else {
+            // Use light mode colors
+            return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+        }
     }
     
     func adaptToSystemAppearance() {
