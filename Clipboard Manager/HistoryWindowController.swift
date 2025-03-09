@@ -420,11 +420,18 @@ class ClipboardItemCard: NSView {
             return
         }
         
+        // Get the current selection state before notifying
+        let wasSelected = isSelected
+        
         // Notify that this card was clicked (for selection)
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
-        // Call the click action (for copying to clipboard)
-        clickAction?(item)
+        // If the item was already selected before this click, then perform the paste action
+        if wasSelected {
+            // Second click on already selected item - copy to clipboard and paste
+            clickAction?(item)
+        }
+        // First click just selects the item (handled by the CardClicked notification)
     }
     
     @objc private func pinButtonClicked(_ sender: NSButton) {
@@ -1651,16 +1658,22 @@ class HistoryWindowController: NSWindowController {
         
         // Find the index of the clicked item
         if let index = displayItems.firstIndex(where: { $0.id == clickedItemId }) {
-            // Deselect current item if different
-            if index != selectedItemIndex {
-                updateCardSelection(at: selectedItemIndex, isSelected: false)
-                
-                // Update selected index
-                selectedItemIndex = index
-                
-                // Select the new item
+            // If clicking on the same item that's already selected, we still need to
+            // update the selection state to ensure the card knows it's selected
+            if index == selectedItemIndex {
+                // Just ensure the card is marked as selected
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
+                return
             }
+            
+            // Deselect current item
+            updateCardSelection(at: selectedItemIndex, isSelected: false)
+            
+            // Update selected index
+            selectedItemIndex = index
+            
+            // Select the new item
+            updateCardSelection(at: selectedItemIndex, isSelected: true)
         }
     }
     
