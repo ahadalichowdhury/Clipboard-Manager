@@ -554,6 +554,9 @@ class HistoryWindowController: NSWindowController {
         
         super.init(window: window)
         
+        // Set the window delegate to self
+        window.delegate = self
+        
         setupUI()
         
         // Register for history updates
@@ -899,8 +902,8 @@ class HistoryWindowController: NSWindowController {
     }
     
     private func setupKeyboardMonitoring() {
-        // Make the window first responder to receive key events
-        window?.makeFirstResponder(nil)
+        // Make the window first responder to receive key events, but not the search field
+        window?.makeFirstResponder(containerView)
         
         // Set up local event monitor for keyboard events
         NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -915,7 +918,9 @@ class HistoryWindowController: NSWindowController {
         }
         
         // Set up local event monitor for mouse events to prevent beep on double-click and triple-click
-        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            guard let self = self else { return event }
+            
             // If it's a double-click or triple-click, we'll handle it in our gesture recognizers
             if event.clickCount >= 2 && event.type == .leftMouseDown {
                 // Let our gesture recognizers handle it
@@ -923,6 +928,23 @@ class HistoryWindowController: NSWindowController {
             } else if event.clickCount >= 2 && event.type == .leftMouseUp {
                 // Prevent the system beep by consuming the event
                 return nil
+            }
+            
+            // Check if the search field is active and the click is outside the search field
+            if self.searchField != nil && 
+               self.searchField.currentEditor() != nil && 
+               event.type == .leftMouseDown {
+                
+                // Convert the event location to window coordinates
+                let locationInWindow = event.locationInWindow
+                
+                // Convert window coordinates to search field coordinates
+                let locationInSearchField = self.searchField.convert(locationInWindow, from: nil)
+                
+                // If the click is outside the search field, reset focus to the container view
+                if !self.searchField.bounds.contains(locationInSearchField) {
+                    self.window?.makeFirstResponder(self.containerView)
+                }
             }
             
             return event // Not a multi-click, propagate normally
@@ -937,7 +959,7 @@ class HistoryWindowController: NSWindowController {
                 // Clear search and remove focus from search field
                 searchField.stringValue = ""
                 searchCancelled()
-                window?.makeFirstResponder(nil)
+                window?.makeFirstResponder(containerView)
                 return true
             }
             return false
@@ -1308,6 +1330,9 @@ class HistoryWindowController: NSWindowController {
         searchField.stringValue = ""
         filteredItems = items
         updateCardViews()
+        
+        // Reset focus to the container view
+        window?.makeFirstResponder(containerView)
     }
     
     @objc private func searchFieldTextDidChange(_ notification: Notification) {
@@ -1352,5 +1377,14 @@ extension HistoryWindowController: NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         print("shouldSelectRow called for row \(row)")
         return true
+    }
+}
+
+// MARK: - NSWindowDelegate
+extension HistoryWindowController: NSWindowDelegate {
+    func windowDidBecomeKey(_ notification: Notification) {
+        // Ensure the search field doesn't get focus automatically
+        // Set focus to the container view instead
+        window?.makeFirstResponder(containerView)
     }
 } 
