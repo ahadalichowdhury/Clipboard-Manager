@@ -1531,6 +1531,16 @@ class HistoryWindowController: NSWindowController {
                 
                 // Ensure the selected item is visible
                 scrollToSelectedItem()
+            } else if !displayItems.isEmpty {
+                // Wrap around to the top when at the bottom
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Select first item
+                selectedItemIndex = 0
+                updateCardSelection(at: selectedItemIndex, isSelected: true)
+                
+                // Ensure the selected item is visible with special wrap-around animation
+                scrollToSelectedItem(isWrappingAround: true)
             }
             return true
             
@@ -1545,6 +1555,16 @@ class HistoryWindowController: NSWindowController {
                 
                 // Ensure the selected item is visible
                 scrollToSelectedItem()
+            } else if !displayItems.isEmpty {
+                // Wrap around to the bottom when at the top
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Select last item
+                selectedItemIndex = displayItems.count - 1
+                updateCardSelection(at: selectedItemIndex, isSelected: true)
+                
+                // Ensure the selected item is visible with special wrap-around animation
+                scrollToSelectedItem(isWrappingAround: true)
             }
             return true
             
@@ -1634,14 +1654,56 @@ class HistoryWindowController: NSWindowController {
         }
     }
     
-    private func scrollToSelectedItem() {
+    private func scrollToSelectedItem(isWrappingAround: Bool = false) {
         guard let selectedCard = selectedCard else { return }
         
         // Convert card frame to scroll view coordinates
         let cardFrameInScrollView = containerView.convert(selectedCard.frame, to: scrollView.contentView)
         
-        // Scroll to make the card visible
-        scrollView.contentView.scrollToVisible(cardFrameInScrollView)
+        if isWrappingAround {
+            // For wrap-around scrolling, create a more sophisticated animation
+            // First, determine if we're wrapping from top to bottom or bottom to top
+            let isScrollingToBottom = selectedItemIndex == (searchText.isEmpty ? 
+                (currentTab == 0 ? items.count - 1 : items.filter { $0.isPinned }.count - 1) : 
+                (currentTab == 0 ? filteredItems.count - 1 : filteredItems.filter { $0.isPinned }.count - 1))
+            
+            // Create a two-step animation for smoother transition
+            NSAnimationContext.runAnimationGroup({ context in
+                // First step: quick fade out
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                
+                // If scrolling to bottom, first scroll a bit more down (beyond content)
+                // If scrolling to top, first scroll a bit more up (beyond content)
+                let intermediatePoint: NSPoint
+                if isScrollingToBottom {
+                    // Scrolling to bottom - first go a bit beyond the top
+                    intermediatePoint = NSPoint(x: 0, y: containerView.frame.height + 50)
+                } else {
+                    // Scrolling to top - first go a bit beyond the bottom
+                    intermediatePoint = NSPoint(x: 0, y: -50)
+                }
+                
+                scrollView.contentView.animator().scroll(intermediatePoint)
+            }, completionHandler: {
+                // Second step: scroll to the actual target with a nice animation
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.25
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    self.scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
+                }, completionHandler: nil)
+            })
+        } else {
+            // Regular scrolling with simple animation
+            NSAnimationContext.runAnimationGroup({ context in
+                // Set animation duration - adjust this value for desired smoothness
+                context.duration = 0.2
+                // Use ease-in-ease-out timing function for smoother animation
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                // Animate the scroll
+                scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
+            }, completionHandler: nil)
+        }
     }
     
     @objc private func cardClicked(_ notification: Notification) {
