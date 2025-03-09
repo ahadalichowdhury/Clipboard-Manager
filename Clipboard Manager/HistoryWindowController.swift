@@ -903,7 +903,10 @@ class HistoryWindowController: NSWindowController {
     
     private func setupKeyboardMonitoring() {
         // Make the window first responder to receive key events, but not the search field
-        window?.makeFirstResponder(containerView)
+        // Add a small delay to ensure this happens after all other initialization
+        DispatchQueue.main.async {
+            self.window?.makeFirstResponder(self.containerView)
+        }
         
         // Set up local event monitor for keyboard events
         NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -1385,6 +1388,9 @@ extension HistoryWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         // Ensure the search field doesn't get focus automatically
         // Set focus to the container view instead
-        window?.makeFirstResponder(containerView)
+        // Add a small delay to ensure this happens after all other initialization
+        DispatchQueue.main.async {
+            self.window?.makeFirstResponder(self.containerView)
+        }
     }
 } 
