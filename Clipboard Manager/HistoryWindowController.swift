@@ -9,6 +9,7 @@ class ClipboardItemCard: NSView {
     private var pinButton: NSButton!
     private var menuButton: NSButton!
     private var saveButton: NSButton?
+    private var pasteButton: NSButton? // Add paste button property
     private var formatIndicator: NSTextField?
     var item: ClipboardItem!
     private var clickAction: ((ClipboardItem) -> Void)?
@@ -63,24 +64,30 @@ class ClipboardItemCard: NSView {
                 // Add click gesture for the image area
                 let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
                 clickGesture.numberOfClicksRequired = 1
-                clickGesture.delaysPrimaryMouseButtonEvents = true
-                imageView.addGestureRecognizer(clickGesture)
+                clickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
                 
                 // Add double-click gesture for viewing the image
                 let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
                 doubleClickGesture.numberOfClicksRequired = 2
-                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+                doubleClickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
+                
+                // Add the gestures in the correct order - double-click first
                 imageView.addGestureRecognizer(doubleClickGesture)
+                imageView.addGestureRecognizer(clickGesture)
+                
+                // Make the image view accept mouse events
+                imageView.acceptsTouchEvents = true
                 
                 // Make sure double-click takes precedence
-                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+                // This line was causing build errors - NSClickGestureRecognizer doesn't have this method
+                // clickGesture.requireGestureRecognizerToFail(doubleClickGesture)
             }
             
             // Add format indicator for images
             addFormatIndicator("Image")
             
             // Add save button for images
-            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            saveButton = NSButton(frame: NSRect(x: frame.width - 120, y: frame.height - 30, width: 24, height: 24))
             saveButton?.bezelStyle = .inline
             saveButton?.isBordered = false
             saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
@@ -111,6 +118,39 @@ class ClipboardItemCard: NSView {
                 
                 addSubview(saveButton)
             }
+            
+            // Add paste button for images
+            pasteButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            pasteButton?.bezelStyle = .inline
+            pasteButton?.isBordered = false
+            pasteButton?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Paste")
+            pasteButton?.imagePosition = .imageOnly
+            pasteButton?.autoresizingMask = [.minXMargin, .minYMargin]
+            pasteButton?.target = self
+            pasteButton?.action = #selector(pasteButtonClicked)
+            
+            if let pasteButton = pasteButton {
+                // Make the paste button more visible
+                pasteButton.contentTintColor = NSColor.systemGreen
+                
+                // Add hover effect for better visibility
+                pasteButton.wantsLayer = true
+                pasteButton.layer?.cornerRadius = 4
+                
+                // Add tooltip
+                pasteButton.toolTip = "Paste this item"
+                
+                // Add tracking area for hover effects
+                let trackingArea = NSTrackingArea(
+                    rect: pasteButton.bounds,
+                    options: [.mouseEnteredAndExited, .activeAlways],
+                    owner: self,
+                    userInfo: ["button": "paste"]
+                )
+                pasteButton.addTrackingArea(trackingArea)
+                
+                addSubview(pasteButton)
+            }
         } else {
             // Setup text label for text content
             contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
@@ -138,20 +178,22 @@ class ClipboardItemCard: NSView {
             // Add click gesture for the content area
             let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
             clickGesture.numberOfClicksRequired = 1
-            clickGesture.delaysPrimaryMouseButtonEvents = true
-            contentLabel.addGestureRecognizer(clickGesture)
+            clickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
             
             // Add double-click gesture for editing
             let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
             doubleClickGesture.numberOfClicksRequired = 2
-            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
-            contentLabel.addGestureRecognizer(doubleClickGesture)
+            doubleClickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
             
-            // Make sure double-click takes precedence
-            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
+            // Add the gestures in the correct order - double-click first
+            contentLabel.addGestureRecognizer(doubleClickGesture)
+            contentLabel.addGestureRecognizer(clickGesture)
+            
+            // Make sure the content label accepts mouse events
+            contentLabel.acceptsTouchEvents = true
             
             // Add save button for text items (similar to image items)
-            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            saveButton = NSButton(frame: NSRect(x: frame.width - 120, y: frame.height - 30, width: 24, height: 24))
             saveButton?.bezelStyle = .inline
             saveButton?.isBordered = false
             saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
@@ -181,6 +223,39 @@ class ClipboardItemCard: NSView {
                 saveButton.addTrackingArea(trackingArea)
                 
                 addSubview(saveButton)
+            }
+            
+            // Add paste button for text items
+            pasteButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
+            pasteButton?.bezelStyle = .inline
+            pasteButton?.isBordered = false
+            pasteButton?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Paste")
+            pasteButton?.imagePosition = .imageOnly
+            pasteButton?.autoresizingMask = [.minXMargin, .minYMargin]
+            pasteButton?.target = self
+            pasteButton?.action = #selector(pasteButtonClicked)
+            
+            if let pasteButton = pasteButton {
+                // Make the paste button more visible
+                pasteButton.contentTintColor = NSColor.systemGreen
+                
+                // Add hover effect for better visibility
+                pasteButton.wantsLayer = true
+                pasteButton.layer?.cornerRadius = 4
+                
+                // Add tooltip
+                pasteButton.toolTip = "Paste this item"
+                
+                // Add tracking area for hover effects
+                let trackingArea = NSTrackingArea(
+                    rect: pasteButton.bounds,
+                    options: [.mouseEnteredAndExited, .activeAlways],
+                    owner: self,
+                    userInfo: ["button": "paste"]
+                )
+                pasteButton.addTrackingArea(trackingArea)
+                
+                addSubview(pasteButton)
             }
         }
         
@@ -420,24 +495,30 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewClicked() {
-        // Check if this is part of a double-click sequence
-        if NSApp.currentEvent?.clickCount ?? 0 > 1 {
-            // This is part of a double-click, let the double-click handler handle it
+        // Get the current event and its click count
+        let clickCount = NSApp.currentEvent?.clickCount ?? 0
+        print("Click detected with clickCount: \(clickCount)")
+        
+        // If it's a double-click or more, let the double-click handler handle it
+        if clickCount >= 2 {
+            print("Detected multi-click in viewClicked, forwarding to viewDoubleClicked")
+            viewDoubleClicked()
             return
         }
-        
-        // Get the current selection state before notifying
-        let wasSelected = isSelected
         
         // Notify that this card was clicked (for selection)
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
-        // If the item was already selected before this click, then perform the paste action
-        if wasSelected {
-            // Second click on already selected item - copy to clipboard and paste
-            clickAction?(item)
-        }
-        // First click just selects the item (handled by the CardClicked notification)
+        // No longer perform paste action on single click - removed the paste functionality
+    }
+    
+    // Add paste button click handler
+    @objc private func pasteButtonClicked(_ sender: NSButton) {
+        // Prevent event propagation
+        NSApp.preventWindowOrdering()
+        
+        // Perform paste action
+        clickAction?(item)
     }
     
     @objc private func pinButtonClicked(_ sender: NSButton) {
@@ -463,6 +544,11 @@ class ClipboardItemCard: NSView {
         let copyItem = NSMenuItem(title: "Copy", action: #selector(copyItemClicked), keyEquivalent: "")
         copyItem.target = self
         menu.addItem(copyItem)
+        
+        // Add "Paste" option
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(pasteButtonClicked), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
         
         // Add appropriate edit/view option based on content type
         if item.isImage {
@@ -490,7 +576,13 @@ class ClipboardItemCard: NSView {
     
     @objc private func editItemClicked() {
         // Post notification to edit this item
-        NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
+        print("Posting EditClipboardItem notification for item: \(item.id)")
+        
+        // Ensure we're on the main thread
+        DispatchQueue.main.async {
+            // Post the notification on the main thread to ensure it's processed correctly
+            NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: self.item.id)
+        }
     }
     
     @objc private func deleteItemClicked() {
@@ -515,8 +607,13 @@ class ClipboardItemCard: NSView {
                 
                 try pngData.write(to: tempFile)
                 
-                // Open with default application
+                // Ensure the app is activated before opening the file
+                NSApp.activate(ignoringOtherApps: true)
+                
+                // Open with default application (Preview on macOS)
                 NSWorkspace.shared.open(tempFile)
+                
+                print("Opening image in Preview: \(tempFile.path)")
             }
         } catch {
             print("Error opening image: \(error)")
@@ -864,6 +961,10 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewDoubleClicked() {
+        // Get the current event and its click count
+        let clickCount = NSApp.currentEvent?.clickCount ?? 0
+        print("viewDoubleClicked called with clickCount: \(clickCount)")
+        
         // Prevent event propagation to avoid beep sound
         NSApp.preventWindowOrdering()
         
@@ -873,17 +974,24 @@ class ClipboardItemCard: NSView {
         // First, notify that this card was clicked to update selection
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
+        print("Double-click detected on item: \(item.id)")
+        
         // For double-click, we want to edit text or view image, not paste
         if item.isImage {
             // Directly call the method to view the image
+            print("Opening image preview for item: \(item.id)")
             viewImageClicked()
         } else {
             // Directly call the method to edit the text
+            print("Opening edit dialog for item: \(item.id)")
             editItemClicked()
         }
         
         // Prevent the single-click action from being triggered
         NSApp.discardEvents(matching: .leftMouseUp, before: nil)
+        
+        // Ensure we don't process any more events for this double-click
+        NSApp.discardEvents(matching: .leftMouseDown, before: nil)
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -891,10 +999,14 @@ class ClipboardItemCard: NSView {
         
         // Check if this is for a specific button
         if let userInfo = event.trackingArea?.userInfo as? [String: String],
-           let buttonType = userInfo["button"], buttonType == "save" {
-            // This is for the save button
+           let buttonType = userInfo["button"] {
+            // This is for a specific button
             if let button = event.trackingArea?.owner as? NSButton {
-                button.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
+                if buttonType == "save" {
+                    button.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
+                } else if buttonType == "paste" {
+                    button.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.2).cgColor
+                }
             }
             return
         }
@@ -923,8 +1035,8 @@ class ClipboardItemCard: NSView {
     override func mouseExited(with event: NSEvent) {
         // Check if this is for a specific button
         if let userInfo = event.trackingArea?.userInfo as? [String: String],
-           let buttonType = userInfo["button"], buttonType == "save" {
-            // This is for the save button
+           let _ = userInfo["button"] {
+            // This is for a specific button
             if let button = event.trackingArea?.owner as? NSButton {
                 button.layer?.backgroundColor = NSColor.clear.cgColor
             }
@@ -972,6 +1084,26 @@ class ClipboardItemCard: NSView {
             applyPreferences()
             layer?.borderWidth = 0.0
         }
+    }
+    
+    // Override mouseDown to better handle click events
+    override func mouseDown(with event: NSEvent) {
+        // Get the click count
+        let clickCount = event.clickCount
+        print("mouseDown detected with clickCount: \(clickCount)")
+        
+        // Handle based on click count
+        if clickCount >= 2 {
+            // This is a double-click or more
+            print("Double-click detected in mouseDown for item: \(item.id)")
+            viewDoubleClicked()
+        } else {
+            // This is a single click
+            viewClicked()
+        }
+        
+        // Let the event propagate to other handlers
+        super.mouseDown(with: event)
     }
 }
 
@@ -1887,8 +2019,16 @@ class HistoryWindowController: NSWindowController {
     
     @objc private func editClipboardItem(_ notification: Notification) {
         // Get the item ID to edit
-        guard let itemId = notification.object as? UUID,
-              let itemIndex = items.firstIndex(where: { $0.id == itemId }) else { return }
+        guard let itemId = notification.object as? UUID else {
+            print("Error: Invalid item ID in EditClipboardItem notification")
+            return
+        }
+        
+        // Find the item in the items array
+        guard let itemIndex = items.firstIndex(where: { $0.id == itemId }) else {
+            print("Error: Could not find item with ID \(itemId) in items array")
+            return
+        }
         
         // Set the currently editing item ID
         currentlyEditingItemId = itemId
@@ -1896,115 +2036,129 @@ class HistoryWindowController: NSWindowController {
         
         let item = items[itemIndex]
         
-        // If it's an image, just show the image viewer instead of edit dialog
-        if item.isImage {
-            // Create a temporary file
-            let tempDir = FileManager.default.temporaryDirectory
-            let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+        // Ensure we're on the main thread for UI operations
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             
-            do {
-                // Convert to PNG for viewing
-                if let image = item.getImage(),
-                   let tiffData = image.tiffRepresentation,
-                   let bitmapImage = NSBitmapImageRep(data: tiffData),
-                   let pngData = bitmapImage.representation(using: .png, properties: [:]) {
-                    
-                    try pngData.write(to: tempFile)
-                    
-                    // Open with default application
-                    NSWorkspace.shared.open(tempFile)
+            // If it's an image, just show the image viewer instead of edit dialog
+            if item.isImage {
+                print("Item is an image, opening in Preview")
+                // Create a temporary file
+                let tempDir = FileManager.default.temporaryDirectory
+                let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+                
+                do {
+                    // Convert to PNG for viewing
+                    if let image = item.getImage(),
+                       let tiffData = image.tiffRepresentation,
+                       let bitmapImage = NSBitmapImageRep(data: tiffData),
+                       let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                        
+                        try pngData.write(to: tempFile)
+                        
+                        // Ensure the app is activated before opening the file
+                        NSApp.activate(ignoringOtherApps: true)
+                        
+                        // Open with default application (Preview on macOS)
+                        NSWorkspace.shared.open(tempFile)
+                        
+                        print("Opening image in Preview: \(tempFile.path)")
+                    } else {
+                        print("Error: Could not create image data for preview")
+                    }
+                } catch {
+                    print("Error opening image: \(error)")
                 }
-            } catch {
-                print("Error opening image: \(error)")
+                
+                // Clear the currently editing item ID
+                self.currentlyEditingItemId = nil
+                return
             }
             
-            // Clear the currently editing item ID
-            currentlyEditingItemId = nil
-            return
+            print("Item is text, opening edit dialog")
+            // For text items, show the edit dialog
+            // Create an edit dialog
+            let alert = NSAlert()
+            alert.messageText = "Edit Clipboard Item"
+            alert.informativeText = "Modify the text below:"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Cancel")
+            
+            // Add a text field for editing
+            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+            textField.stringValue = item.content
+            textField.isEditable = true
+            textField.isSelectable = true
+            textField.isBordered = true
+            textField.drawsBackground = true
+            textField.font = NSFont.systemFont(ofSize: 14)
+            
+            // Create a scroll view to contain the text field for long content
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.autohidesScrollers = true
+            scrollView.borderType = .bezelBorder
+            
+            // Use a text view instead for better multiline editing
+            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+            textView.string = item.content
+            textView.isEditable = true
+            textView.isSelectable = true
+            textView.isRichText = false
+            textView.font = NSFont.systemFont(ofSize: 14)
+            textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+            textView.textContainer?.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
+            textView.isVerticallyResizable = true
+            textView.autoresizingMask = [.width]
+            
+            scrollView.documentView = textView
+            
+            alert.accessoryView = scrollView
+            
+            // Ensure alert appears on top of other applications
+            NSApp.activate(ignoringOtherApps: true)
+            alert.window.level = .floating
+            
+            // Show the dialog
+            let response = alert.runModal()
+            
+            if response == .alertFirstButtonReturn {
+                // User clicked Save
+                let updatedContent = textView.string
+                
+                // IMPORTANT: Store the item ID that's being edited in a local variable
+                // to ensure it's not affected by any other operations
+                let editingItemId = itemId
+                print("Saving edits for item with ID: \(editingItemId)")
+                
+                // First, register for the notification
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(self.handleItemUpdated(_:)),
+                    name: NSNotification.Name("ClipboardHistoryUpdated"),
+                    object: nil
+                )
+                
+                // Store the ID of the item being edited for use in the notification handler
+                self.currentlyEditingItemId = editingItemId
+                
+                // Update the item in the clipboard manager
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("UpdateClipboardItem"),
+                    object: nil,
+                    userInfo: ["itemId": editingItemId, "content": updatedContent]
+                )
+            } else {
+                // User clicked Cancel, clear the currently editing item ID
+                self.currentlyEditingItemId = nil
+            }
+            
+            // Ensure we're still using accessory activation policy
+            NSApp.setActivationPolicy(.accessory)
         }
-        
-        // For text items, show the edit dialog
-        // Create an edit dialog
-        let alert = NSAlert()
-        alert.messageText = "Edit Clipboard Item"
-        alert.informativeText = "Modify the text below:"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        
-        // Add a text field for editing
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        textField.stringValue = item.content
-        textField.isEditable = true
-        textField.isSelectable = true
-        textField.isBordered = true
-        textField.drawsBackground = true
-        textField.font = NSFont.systemFont(ofSize: 14)
-        
-        // Create a scroll view to contain the text field for long content
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .bezelBorder
-        
-        // Use a text view instead for better multiline editing
-        let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        textView.string = item.content
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.isRichText = false
-        textView.font = NSFont.systemFont(ofSize: 14)
-        textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        
-        scrollView.documentView = textView
-        
-        alert.accessoryView = scrollView
-        
-        // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
-        alert.window.level = .floating
-        
-        // Show the dialog
-        let response = alert.runModal()
-        
-        if response == .alertFirstButtonReturn {
-            // User clicked Save
-            let updatedContent = textView.string
-            
-            // IMPORTANT: Store the item ID that's being edited in a local variable
-            // to ensure it's not affected by any other operations
-            let editingItemId = itemId
-            print("Saving edits for item with ID: \(editingItemId)")
-            
-            // First, register for the notification
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleItemUpdated(_:)),
-                name: NSNotification.Name("ClipboardHistoryUpdated"),
-                object: nil
-            )
-            
-            // Store the ID of the item being edited for use in the notification handler
-            self.currentlyEditingItemId = editingItemId
-            
-            // Update the item in the clipboard manager
-            NotificationCenter.default.post(
-                name: NSNotification.Name("UpdateClipboardItem"),
-                object: nil,
-                userInfo: ["itemId": editingItemId, "content": updatedContent]
-            )
-        } else {
-            // User clicked Cancel, clear the currently editing item ID
-            currentlyEditingItemId = nil
-        }
-        
-        // Ensure we're still using accessory activation policy
-        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func handleItemUpdated(_ notification: Notification) {
@@ -2053,8 +2207,7 @@ class HistoryWindowController: NSWindowController {
     }
     
     @objc private func performSearch(_ sender: NSSearchField) {
-        // Add safety check for nil sender
-        guard sender != nil else { return }
+        // Remove the unnecessary nil check for sender (it's non-optional)
         
         let newSearchText = sender.stringValue
         
