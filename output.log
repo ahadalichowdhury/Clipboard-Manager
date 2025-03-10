@@ -1,0 +1,9 @@
+warning: 'clipboard-manager': Invalid Resource 'ClipboardManagerSwift.entitlements': File not found.
+warning: 'clipboard-manager': found 3 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/s.m.ahadalichowdhury/Downloads/project/Clipboard-Manager/Clipboard Manager/HistoryWindowController_backup.swift.old
+    /Users/s.m.ahadalichowdhury/Downloads/project/Clipboard-Manager/Clipboard Manager/Preview Content/Preview Assets.xcassets
+    /Users/s.m.ahadalichowdhury/Downloads/project/Clipboard-Manager/Clipboard Manager/Clipboard_Manager.entitlements
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'ClipboardManager' complete! (0.45s)

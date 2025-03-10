@@ -2,6 +2,7 @@ import Cocoa
 import UserNotifications
 import ApplicationServices
 import UniformTypeIdentifiers
+import Carbon.HIToolbox
 
 class ClipboardItemCard: NSView {
     private var contentLabel: NSTextField!
@@ -1108,7 +1109,7 @@ class ClipboardItemCard: NSView {
     }
 }
 
-// Add this class before the HistoryWindowController class
+// Simple EditableTextView class for rich text editing
 class EditableTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         // Check if it's Return/Enter key
@@ -1121,6 +1122,7 @@ class EditableTextView: NSTextView {
     }
 }
 
+// Add this class before the HistoryWindowController class
 class HistoryWindowController: NSWindowController {
     private var items: [ClipboardItem] = []
     private var filteredItems: [ClipboardItem] = [] // Add filtered items array
@@ -1139,6 +1141,7 @@ class HistoryWindowController: NSWindowController {
     private var targetApplication: NSRunningApplication? // Store the target application
     private var currentlyEditingItemId: UUID? // Track the item being edited
     private var nextItemToFocusAfterDeletion: UUID? // Track the next item to focus on after deletion
+    private var currentEditTextView: EditableTextView? // Track the current text view being edited
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -1445,7 +1448,7 @@ class HistoryWindowController: NSWindowController {
         }
         
         // Clear the selected card reference since we're rebuilding the view
-        selectedCard = nil
+        selectedCard = nil as ClipboardItemCard?
         
         // Calculate container height based on number of items and preferences
         let containerHeight = CGFloat(displayItems.count * prefs.cardHeight + (displayItems.count - 1) * prefs.cardSpacing + 20)
@@ -1618,26 +1621,38 @@ class HistoryWindowController: NSWindowController {
     }
     
     private func copyItemToClipboard(_ item: ClipboardItem) {
-        print("Item selected: \(item.content.prefix(30))...")
+        print("===== HISTORY WINDOW COPY OPERATION START =====")
+        print("Item selected: \(item.content)")
+        print("Item ID: \(item.id)")
+        print("Item isRichText: \(item.isRichText)")
+        if item.isRichText {
+            print("Item richTextData size: \(item.richTextData?.count ?? 0) bytes")
+        }
         
         // Get the app delegate
         if let appDelegate = NSApp.delegate as? AppDelegate {
             // Store the target application before closing the window
             let targetApp = self.targetApplication
+            print("Target application: \(targetApp?.localizedName ?? "Unknown")")
             
             // Close the window first
             if let window = self.window, Preferences.shared.closeAfterCopy {
+                print("Closing window (closeAfterCopy is enabled)")
                 window.close()
+            } else {
+                print("Not closing window (closeAfterCopy is disabled or window is nil)")
             }
             
             // Find the index of the item
             let itemIndex = items.firstIndex(where: { $0.id == item.id }) ?? 0
+            print("Found item at index: \(itemIndex)")
             
             // Create a menu item with the appropriate tag
             let menuItem = NSMenuItem()
             menuItem.tag = itemIndex
             
             // Copy the item to clipboard
+            print("Calling AppDelegate.copyItemToClipboard")
             appDelegate.copyItemToClipboard(menuItem)
             
             // Reactivate the target application with a more robust approach
@@ -1647,6 +1662,7 @@ class HistoryWindowController: NSWindowController {
                 // Use a slightly longer delay to ensure the window is fully closed
                 // and the clipboard operation is complete before activating the target app
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    print("Activating target application after delay")
                     // Activate the target application with options to bring it to front
                     targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
                     
@@ -1654,13 +1670,22 @@ class HistoryWindowController: NSWindowController {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         // If auto-paste is enabled, simulate paste keystroke
                         if Preferences.shared.autoPaste {
+                            print("Auto-paste is enabled, simulating paste keystroke")
+                            print("isRichText: \(item.isRichText), hasMultipleFormats: \(item.hasMultipleFormats)")
                             // Use the PasteManager directly for better control
                             PasteManager.shared.paste(isRichText: item.isRichText || item.hasMultipleFormats)
+                        } else {
+                            print("Auto-paste is disabled, not simulating paste keystroke")
                         }
                     }
                 }
+            } else {
+                print("No target application to reactivate")
             }
+        } else {
+            print("ERROR: Could not get AppDelegate")
         }
+        print("===== HISTORY WINDOW COPY OPERATION END =====")
     }
     
     @objc private func clearAllClicked() {
@@ -2018,7 +2043,7 @@ class HistoryWindowController: NSWindowController {
                     
                     // Clear reference if this was the selected card
                     if selectedCard == card {
-                        selectedCard = nil
+                        selectedCard = nil as ClipboardItemCard?
                     }
                 }
                 break
@@ -2117,15 +2142,18 @@ class HistoryWindowController: NSWindowController {
     }
     
     @objc private func editClipboardItem(_ notification: Notification) {
+        print("===== EDIT ITEM START =====")
         // Get the item ID to edit
         guard let itemId = notification.object as? UUID else {
             print("Error: Invalid item ID in EditClipboardItem notification")
+            print("===== EDIT ITEM FAILED =====")
             return
         }
         
         // Find the item in the items array
         guard let itemIndex = items.firstIndex(where: { $0.id == itemId }) else {
             print("Error: Could not find item with ID \(itemId) in items array")
+            print("===== EDIT ITEM FAILED =====")
             return
         }
         
@@ -2134,10 +2162,19 @@ class HistoryWindowController: NSWindowController {
         print("Starting to edit item with ID: \(itemId)")
         
         let item = items[itemIndex]
+        print("Item content: \(item.content)")
+        print("Item isRichText: \(item.isRichText)")
+        if item.isRichText {
+            print("Item richTextData size: \(item.richTextData?.count ?? 0) bytes")
+        }
         
         // Ensure we're on the main thread for UI operations
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                print("Self is nil in async block")
+                print("===== EDIT ITEM FAILED =====")
+                return
+            }
             
             // If it's an image, just show the image viewer instead of edit dialog
             if item.isImage {
@@ -2171,6 +2208,7 @@ class HistoryWindowController: NSWindowController {
                 
                 // Clear the currently editing item ID
                 self.currentlyEditingItemId = nil
+                print("===== EDIT ITEM COMPLETE (IMAGE) =====")
                 return
             }
             
@@ -2184,28 +2222,24 @@ class HistoryWindowController: NSWindowController {
             alert.addButton(withTitle: "Save")
             alert.addButton(withTitle: "Cancel")
             
-            // Add a text field for editing
-            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-            textField.stringValue = item.content
-            textField.isEditable = true
-            textField.isSelectable = true
-            textField.isBordered = true
-            textField.drawsBackground = true
-            textField.font = NSFont.systemFont(ofSize: 14)
-            
-            // Create a scroll view to contain the text field for long content
-            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+            // Create a scroll view to contain the text view for long content
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
             scrollView.hasVerticalScroller = true
             scrollView.hasHorizontalScroller = false
             scrollView.autohidesScrollers = true
             scrollView.borderType = .bezelBorder
             
-            // Use a text view instead for better multiline editing
-            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-            textView.string = item.content
+            // Use a text view for better multiline editing
+            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: scrollView.frame.width, height: scrollView.frame.height))
+            
+            // Store the text view in a property so it can be accessed if needed
+            self.currentEditTextView = textView
+            
+            // Configure text view for rich text editing
             textView.isEditable = true
             textView.isSelectable = true
-            textView.isRichText = false
+            textView.isRichText = true  // Always enable rich text editing
+            textView.allowsUndo = true
             textView.font = NSFont.systemFont(ofSize: 14)
             textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
             textView.textContainer?.widthTracksTextView = true
@@ -2213,20 +2247,109 @@ class HistoryWindowController: NSWindowController {
             textView.isVerticallyResizable = true
             textView.autoresizingMask = [.width]
             
+            // Check if we have rich text data
+            if item.isRichText, let richTextData = item.richTextData {
+                print("Loading rich text data for editing")
+                do {
+                    // Create attributed string from rich text data
+                    let attributedString = try NSAttributedString(
+                        data: richTextData,
+                        options: [.documentType: NSAttributedString.DocumentType.rtf],
+                        documentAttributes: nil
+                    )
+                    
+                    print("Created attributed string from rich text data")
+                    print("Attributed string length: \(attributedString.length)")
+                    print("Attributed string plain text: \(attributedString.string)")
+                    
+                    // Set the attributed string to the text view
+                    textView.textStorage?.setAttributedString(attributedString)
+                    print("Loaded rich text data for editing")
+                } catch {
+                    print("Error displaying rich text in editor: \(error)")
+                    // Fall back to plain text if there's an error
+                    textView.string = item.content
+                    print("Falling back to plain text due to error")
+                }
+            } else {
+                // No rich text data, just set plain text
+                textView.string = item.content
+                print("No rich text data, using plain text but enabling rich text editing")
+            }
+            
             scrollView.documentView = textView
             
+            // Set the scroll view as the accessory view
             alert.accessoryView = scrollView
             
             // Ensure alert appears on top of other applications
             NSApp.activate(ignoringOtherApps: true)
             alert.window.level = .floating
             
+            // Make the alert window larger for better editing
+            let window = alert.window
+            let currentFrame = window.frame
+            window.setFrame(NSRect(x: currentFrame.origin.x, y: currentFrame.origin.y - 100, width: 550, height: currentFrame.height + 100), display: true)
+            
             // Show the dialog
             let response = alert.runModal()
             
+            // Clear the current edit text view reference
+            defer {
+                self.currentEditTextView = nil
+            }
+            
             if response == .alertFirstButtonReturn {
+                print("User clicked Save")
                 // User clicked Save
-                let updatedContent = textView.string
+                var updatedContent: String
+                var updatedRichTextData: Data? = nil
+                
+                // Always treat the content as rich text to preserve formatting
+                print("Processing rich text edit")
+                // Get the attributed string from the text view
+                let attributedString = textView.attributedString()
+                
+                // Convert to plain text for the content field
+                updatedContent = attributedString.string
+                print("Updated content from rich text: \(updatedContent)")
+                
+                // Convert to RTF data for storage
+                do {
+                    // Use RTF document type to preserve all formatting
+                    updatedRichTextData = try attributedString.data(
+                        from: NSRange(location: 0, length: attributedString.length),
+                        documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                    )
+                    print("Created rich text data from edited content")
+                    print("Rich text data size: \(updatedRichTextData?.count ?? 0) bytes")
+                    
+                    // Verify that the RTF data can be converted back to the same plain text
+                    let verifiedAttributedString = try NSAttributedString(
+                        data: updatedRichTextData!,
+                        options: [.documentType: NSAttributedString.DocumentType.rtf],
+                        documentAttributes: nil
+                    )
+                    let verifiedPlainText = verifiedAttributedString.string
+                    
+                    if verifiedPlainText != updatedContent {
+                        print("WARNING: Plain text from RTF doesn't match expected content")
+                        print("Expected: \(updatedContent)")
+                        print("Got from RTF: \(verifiedPlainText)")
+                        
+                        // Use the verified plain text to ensure consistency
+                        updatedContent = verifiedPlainText
+                        print("Updated content to match RTF data: \(updatedContent)")
+                    } else {
+                        print("Verified plain text matches RTF content")
+                    }
+                } catch {
+                    print("Error converting rich text to data: \(error)")
+                    
+                    // Fallback to plain text if RTF conversion fails
+                    updatedContent = textView.string
+                    print("Falling back to plain text due to RTF conversion error: \(updatedContent)")
+                }
                 
                 // IMPORTANT: Store the item ID that's being edited in a local variable
                 // to ensure it's not affected by any other operations
@@ -2245,14 +2368,29 @@ class HistoryWindowController: NSWindowController {
                 self.currentlyEditingItemId = editingItemId
                 
                 // Update the item in the clipboard manager
+                var userInfo: [String: Any] = ["itemId": editingItemId, "content": updatedContent]
+                
+                // Always include rich text data if available
+                if let richTextData = updatedRichTextData {
+                    userInfo["richTextData"] = richTextData
+                    print("Including rich text data in update notification")
+                    print("Rich text data size: \(richTextData.count) bytes")
+                } else {
+                    print("No rich text data to include in update notification")
+                }
+                
+                print("Posting UpdateClipboardItem notification")
                 NotificationCenter.default.post(
                     name: NSNotification.Name("UpdateClipboardItem"),
                     object: nil,
-                    userInfo: ["itemId": editingItemId, "content": updatedContent]
+                    userInfo: userInfo
                 )
+                print("===== EDIT ITEM COMPLETE (SAVED) =====")
             } else {
                 // User clicked Cancel, clear the currently editing item ID
                 self.currentlyEditingItemId = nil
+                print("User clicked Cancel")
+                print("===== EDIT ITEM CANCELLED =====")
             }
             
             // Ensure we're still using accessory activation policy

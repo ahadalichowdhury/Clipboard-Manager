@@ -435,12 +435,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Only show manual paste notification if auto-paste is disabled and not called from HistoryWindowController
         // We can detect this by checking if we're on the main thread
         if !Preferences.shared.autoPaste && Thread.isMainThread {
+            // Check if we're running from a proper bundle
+            if Bundle.main.bundleIdentifier == nil {
+                // We're running from the command line, use NSLog instead
+                NSLog("Press Cmd+V to paste")
+                return
+            }
+            
             // Show a notification to manually paste
-            let notification = NSUserNotification()
-            notification.title = "Copied to Clipboard"
-            notification.informativeText = "Press Cmd+V to paste"
-            notification.soundName = NSUserNotificationDefaultSoundName
-            NSUserNotificationCenter.default.deliver(notification)
+            let content = UNMutableNotificationContent()
+            content.title = "Copied to Clipboard"
+            content.body = "Press Cmd+V to paste"
+            
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    NSLog("Error showing notification: \(error)")
+                }
+            }
         }
     }
     
@@ -448,6 +460,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Only show notification if preferences allow it
         let prefs = Preferences.shared
         if prefs.showNotifications {
+            // Check if we're running from a proper bundle
+            if Bundle.main.bundleIdentifier == nil {
+                // We're running from the command line, use NSLog instead
+                NSLog("Copied to Clipboard: \(contentText)")
+                return
+            }
+            
+            // Use UserNotifications framework
             let content = UNMutableNotificationContent()
             content.title = "Copied to Clipboard"
             
@@ -461,7 +481,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
             
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    NSLog("Error showing notification: \(error)")
+                }
+            }
         }
     }
 

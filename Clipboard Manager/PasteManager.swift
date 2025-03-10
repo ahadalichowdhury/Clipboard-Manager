@@ -17,10 +17,61 @@ class PasteManager {
     
     // Main paste method that tries all available strategies
     func paste(isRichText: Bool = false) {
+        Logger.shared.log("===== PASTE OPERATION START =====")
         Logger.shared.log("PasteManager: Starting paste operation" + (isRichText ? " (Rich Text)" : ""))
         
         // Set the rich text flag
         self.isRichTextPaste = isRichText
+        Logger.shared.log("Set isRichTextPaste to: \(isRichText)")
+        
+        // Check clipboard content
+        let pasteboard = NSPasteboard.general
+        var hasRichTextData = false
+        
+        if let rtfData = pasteboard.data(forType: .rtf) {
+            Logger.shared.log("Clipboard contains RTF data: \(rtfData.count) bytes")
+            hasRichTextData = true
+        } else {
+            Logger.shared.log("Clipboard does NOT contain RTF data")
+            
+            // Check for HTML data which can be treated as rich text
+            if let htmlData = pasteboard.data(forType: .html) ?? 
+                             pasteboard.data(forType: NSPasteboard.PasteboardType(rawValue: "Apple HTML pasteboard type")) {
+                Logger.shared.log("Clipboard contains HTML data: \(htmlData.count) bytes")
+                
+                // Try to convert HTML to RTF
+                do {
+                    let attributedString = try NSAttributedString(
+                        data: htmlData,
+                        options: [.documentType: NSAttributedString.DocumentType.html],
+                        documentAttributes: nil
+                    )
+                    
+                    let rtfData = try attributedString.data(
+                        from: NSRange(location: 0, length: attributedString.length),
+                        documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                    )
+                    
+                    Logger.shared.log("Converted HTML to RTF: \(rtfData.count) bytes")
+                    
+                    // Set the RTF data to the clipboard
+                    pasteboard.setData(rtfData, forType: .rtf)
+                    
+                    // Use writeObjects for better compatibility
+                    pasteboard.writeObjects([attributedString])
+                    
+                    hasRichTextData = true
+                } catch {
+                    Logger.shared.log("Error converting HTML to RTF: \(error)")
+                }
+            }
+        }
+        
+        if let stringData = pasteboard.string(forType: .string) {
+            Logger.shared.log("Clipboard contains string data: \(stringData)")
+        } else {
+            Logger.shared.log("Clipboard does NOT contain string data")
+        }
         
         // Check for accessibility permissions
         guard AXIsProcessTrusted() else {
@@ -29,6 +80,7 @@ class PasteManager {
             showAccessibilityNotification()
             // Request permissions via AppDelegate
             NotificationCenter.default.post(name: NSNotification.Name("RequestAccessibilityPermissions"), object: nil)
+            Logger.shared.log("===== PASTE OPERATION FAILED (No Accessibility Permissions) =====")
             return
         }
         
@@ -58,6 +110,16 @@ class PasteManager {
                     DispatchQueue.main.async {
                         self.showPasteFailureNotification()
                     }
+                    Logger.shared.log("===== PASTE OPERATION FAILED (No Target App) =====")
+                    return
+                }
+            }
+            
+            // If this is a rich text paste and we have rich text data, try the special rich text paste method first
+            if self.isRichTextPaste && hasRichTextData {
+                if self.tryRichTextPasteMethod() {
+                    Logger.shared.log("PasteManager: Rich text paste succeeded")
+                    Logger.shared.log("===== PASTE OPERATION COMPLETED (Rich Text Method) =====")
                     return
                 }
             }
@@ -65,6 +127,7 @@ class PasteManager {
             // 1. Try direct paste with Command+V
             if self.tryDirectPasteMethod() {
                 Logger.shared.log("PasteManager: Direct paste succeeded")
+                Logger.shared.log("===== PASTE OPERATION COMPLETED (Direct Method) =====")
                 return
             }
             
@@ -72,6 +135,7 @@ class PasteManager {
             Thread.sleep(forTimeInterval: 0.3)
             if self.tryAppleScriptPasteMethods() {
                 Logger.shared.log("PasteManager: AppleScript paste succeeded")
+                Logger.shared.log("===== PASTE OPERATION COMPLETED (AppleScript Method) =====")
                 return
             }
             
@@ -79,6 +143,7 @@ class PasteManager {
             Thread.sleep(forTimeInterval: 0.3)
             if self.tryOsascriptPaste() {
                 Logger.shared.log("PasteManager: osascript paste succeeded")
+                Logger.shared.log("===== PASTE OPERATION COMPLETED (Osascript Method) =====")
                 return
             }
             
@@ -86,6 +151,7 @@ class PasteManager {
             DispatchQueue.main.async {
                 self.showPasteFailureNotification()
             }
+            Logger.shared.log("===== PASTE OPERATION FAILED (All Methods Failed) =====")
         }
     }
     
@@ -218,12 +284,47 @@ class PasteManager {
     
     // Direct paste method using CGEvent
     private func tryDirectPasteMethod() -> Bool {
+        Logger.shared.log("===== DIRECT PASTE METHOD START =====")
         Logger.shared.log("PasteManager: Trying direct paste method")
+        Logger.shared.log("isRichTextPaste: \(isRichTextPaste)")
+        
+        // Check clipboard content again right before pasting
+        let pasteboard = NSPasteboard.general
+        if let rtfData = pasteboard.data(forType: .rtf) {
+            Logger.shared.log("Clipboard contains RTF data before paste: \(rtfData.count) bytes")
+            
+            // Add more detailed logging for RTF data
+            if isRichTextPaste {
+                // Try to convert RTF to attributed string to see the actual content
+                do {
+                    let attributedString = try NSAttributedString(
+                        data: rtfData,
+                        options: [.documentType: NSAttributedString.DocumentType.rtf],
+                        documentAttributes: nil
+                    )
+                    Logger.shared.log("RTF content as plain text: \(attributedString.string)")
+                } catch {
+                    Logger.shared.log("Error converting RTF to attributed string: \(error)")
+                }
+            }
+        } else {
+            Logger.shared.log("Clipboard does NOT contain RTF data before paste")
+        }
+        
+        if let stringData = pasteboard.string(forType: .string) {
+            Logger.shared.log("Clipboard contains string data before paste: \(stringData)")
+        } else {
+            Logger.shared.log("Clipboard does NOT contain string data before paste")
+        }
+        
+        // Log all available types on the clipboard
+        Logger.shared.log("All available clipboard types: \(pasteboard.types?.map { $0.rawValue } ?? [])")
         
         // Ensure the frontmost application is not our app
         if let frontApp = NSWorkspace.shared.frontmostApplication,
            frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
             Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
             return false
         }
         
@@ -234,12 +335,16 @@ class PasteManager {
         // Create a source
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             Logger.shared.log("PasteManager: Failed to create event source")
+            Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
             return false
         }
+        
+        Logger.shared.log("PasteManager: CGEventSource creation successful")
         
         // Create key down event for Command+V
         guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) else {
             Logger.shared.log("PasteManager: Failed to create keydown event")
+            Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
             return false
         }
         keyVDown.flags = .maskCommand
@@ -247,6 +352,7 @@ class PasteManager {
         // Create key up event for Command+V
         guard let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
             Logger.shared.log("PasteManager: Failed to create keyup event")
+            Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
             return false
         }
         keyVUp.flags = .maskCommand
@@ -265,6 +371,7 @@ class PasteManager {
         Thread.sleep(forTimeInterval: 0.1)
         
         Logger.shared.log("PasteManager: Direct paste method completed")
+        Logger.shared.log("===== DIRECT PASTE METHOD END =====")
         
         // Return true to indicate we attempted the method
         // We can't really know if it succeeded
@@ -411,6 +518,267 @@ class PasteManager {
             Logger.shared.log("PasteManager: osascript paste failed: \(error.localizedDescription)")
             return false
         }
+    }
+    
+    // Special method for pasting rich text
+    private func tryRichTextPasteMethod() -> Bool {
+        Logger.shared.log("===== RICH TEXT PASTE METHOD START =====")
+        Logger.shared.log("PasteManager: Trying rich text paste method")
+        
+        // Check clipboard content again right before pasting
+        let pasteboard = NSPasteboard.general
+        var rtfData: Data? = nil
+        var attributedString: NSAttributedString? = nil
+        
+        // First check for RTF data
+        if let data = pasteboard.data(forType: .rtf) {
+            rtfData = data
+            Logger.shared.log("Clipboard contains RTF data before rich text paste: \(data.count) bytes")
+            
+            // Try to convert RTF to attributed string
+            do {
+                attributedString = try NSAttributedString(
+                    data: data,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil
+                )
+                Logger.shared.log("RTF content as plain text: \(attributedString!.string)")
+            } catch {
+                Logger.shared.log("Error converting RTF to attributed string: \(error)")
+            }
+        } 
+        // If no RTF data, check for HTML data
+        else if let htmlData = pasteboard.data(forType: .html) ?? 
+                              pasteboard.data(forType: NSPasteboard.PasteboardType(rawValue: "Apple HTML pasteboard type")) {
+            Logger.shared.log("Clipboard contains HTML data before rich text paste: \(htmlData.count) bytes")
+            
+            // Try to convert HTML to attributed string and then to RTF
+            do {
+                attributedString = try NSAttributedString(
+                    data: htmlData,
+                    options: [.documentType: NSAttributedString.DocumentType.html],
+                    documentAttributes: nil
+                )
+                Logger.shared.log("HTML content as plain text: \(attributedString!.string)")
+                
+                // Convert to RTF data
+                rtfData = try attributedString!.data(
+                    from: NSRange(location: 0, length: attributedString!.length),
+                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                )
+                Logger.shared.log("Converted HTML to RTF data: \(rtfData!.count) bytes")
+            } catch {
+                Logger.shared.log("Error converting HTML to attributed string: \(error)")
+            }
+        }
+        
+        // If we couldn't get RTF data or attributed string, fail
+        if rtfData == nil || attributedString == nil {
+            Logger.shared.log("Clipboard does NOT contain RTF or HTML data before rich text paste")
+            Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        // Create a new attributed string with the same attributes to ensure formatting is preserved
+        Logger.shared.log("Creating fresh attributed string to ensure formatting is preserved")
+        let newAttributedString = NSMutableAttributedString(attributedString: attributedString!)
+        
+        // Clear the pasteboard and set the attributed string directly
+        pasteboard.clearContents()
+        let success = pasteboard.writeObjects([newAttributedString])
+        Logger.shared.log("Writing fresh attributed string to pasteboard: \(success)")
+        
+        // Also set the RTF data for all common RTF formats to maximize compatibility
+        let rtfFormats: [NSPasteboard.PasteboardType] = [
+            .rtf,
+            .init("NeXT Rich Text Format v1.0 pasteboard type"),
+            .init("com.apple.notes.richtext"),
+            .init("public.rtf"),
+            .init("Apple Rich Text Format")
+        ]
+        
+        // Get the fresh RTF data from the attributed string
+        do {
+            let freshRtfData = try newAttributedString.data(
+                from: NSRange(location: 0, length: newAttributedString.length),
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+            )
+            
+            Logger.shared.log("Created fresh RTF data: \(freshRtfData.count) bytes")
+            
+            for format in rtfFormats {
+                pasteboard.setData(freshRtfData, forType: format)
+                Logger.shared.log("Set fresh RTF data for format: \(format.rawValue)")
+            }
+            
+            // Also set plain text as fallback
+            pasteboard.setString(attributedString!.string, forType: .string)
+            Logger.shared.log("Set plain text fallback: \(attributedString!.string)")
+        } catch {
+            Logger.shared.log("Error creating fresh RTF data: \(error)")
+            
+            // Use the original RTF data as fallback
+            for format in rtfFormats {
+                pasteboard.setData(rtfData!, forType: format)
+                Logger.shared.log("Set original RTF data for format: \(format.rawValue)")
+            }
+            
+            // Also set plain text as fallback
+            pasteboard.setString(attributedString!.string, forType: .string)
+            Logger.shared.log("Set plain text fallback: \(attributedString!.string)")
+        }
+        
+        // Log all available types on the clipboard
+        Logger.shared.log("All available clipboard types: \(pasteboard.types?.map { $0.rawValue } ?? [])")
+        
+        // Ensure the frontmost application is not our app
+        if let frontApp = NSWorkspace.shared.frontmostApplication,
+           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        // Get the frontmost app name for AppleScript
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Could not determine frontmost app")
+            Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Frontmost app for rich text paste: \(appName)")
+        
+        // Try multiple AppleScript approaches for rich text pasting
+        let scriptOptions = [
+            // Option 1: Use Edit menu's Paste command
+            """
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.2
+                        click menu item "Paste" of menu "Edit" of menu bar 1
+                        delay 0.2
+                    end tell
+                end tell
+            end tell
+            """,
+            
+            // Option 2: Use Command+V but with longer delays
+            """
+            tell application "\(appName)"
+                activate
+                delay 0.3
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.3
+                        keystroke "v" using command down
+                        delay 0.3
+                    end tell
+                end tell
+            end tell
+            """,
+            
+            // Option 3: Try to paste with formatting explicitly (works in some apps)
+            """
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.2
+                        try
+                            click menu item "Paste with Formatting" of menu "Edit" of menu bar 1
+                        on error
+                            click menu item "Paste" of menu "Edit" of menu bar 1
+                        end try
+                        delay 0.2
+                    end tell
+                end tell
+            end tell
+            """
+        ]
+        
+        // Try each script option
+        for (index, scriptText) in scriptOptions.enumerated() {
+            Logger.shared.log("PasteManager: Trying rich text paste AppleScript option \(index + 1)")
+            
+            let script = NSAppleScript(source: scriptText)
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            
+            if let error = error {
+                Logger.shared.log("PasteManager: Rich text paste AppleScript option \(index + 1) failed: \(error)")
+                // Try the next option
+                Thread.sleep(forTimeInterval: 0.2)
+            } else {
+                Logger.shared.log("PasteManager: Rich text paste AppleScript option \(index + 1) succeeded")
+                Logger.shared.log("===== RICH TEXT PASTE METHOD END =====")
+                return true
+            }
+        }
+        
+        // If all options failed, try one more approach with osascript
+        Logger.shared.log("PasteManager: All AppleScript options failed, trying osascript approach")
+        
+        do {
+            // Create a temporary AppleScript file
+            let tempDir = FileManager.default.temporaryDirectory
+            let scriptPath = tempDir.appendingPathComponent("rich_paste_script.scpt")
+            
+            let scriptContent = """
+            tell application "\(appName)"
+                activate
+                delay 0.3
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.3
+                        try
+                            click menu item "Paste with Formatting" of menu "Edit" of menu bar 1
+                        on error
+                            try
+                                click menu item "Paste" of menu "Edit" of menu bar 1
+                            on error
+                                keystroke "v" using command down
+                            end try
+                        end try
+                        delay 0.3
+                    end tell
+                end tell
+            end tell
+            """
+            
+            try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Execute the script using osascript
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = [scriptPath.path]
+            
+            let outputPipe = Pipe()
+            task.standardOutput = outputPipe
+            
+            try task.run()
+            task.waitUntilExit()
+            
+            // Clean up
+            try FileManager.default.removeItem(at: scriptPath)
+            
+            if task.terminationStatus == 0 {
+                Logger.shared.log("PasteManager: osascript approach succeeded")
+                Logger.shared.log("===== RICH TEXT PASTE METHOD END =====")
+                return true
+            } else {
+                Logger.shared.log("PasteManager: osascript approach failed")
+            }
+        } catch {
+            Logger.shared.log("PasteManager: osascript error: \(error)")
+        }
+        
+        Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
+        return false
     }
     
     // Fallback method: Just copy to clipboard and let user manually paste
