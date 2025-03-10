@@ -4,6 +4,7 @@ class Preferences: Codable {
     // Appearance
     var useSystemAppearance: Bool = true
     var darkMode: Bool = false
+    var customizeAppearance: Bool = false // Controls whether to show customization options
     var cardBackgroundColor: String = "#FFFFFF" // Hex color
     var cardBackgroundAlpha: Float = 1.0 // 0.0 to 1.0
     var textColor: String = "#000000" // Hex color
@@ -122,6 +123,7 @@ class Preferences: Codable {
                 // Copy all properties from loaded preferences
                 self.useSystemAppearance = loadedPreferences.useSystemAppearance
                 self.darkMode = loadedPreferences.darkMode
+                self.customizeAppearance = loadedPreferences.customizeAppearance
                 self.cardBackgroundColor = loadedPreferences.cardBackgroundColor
                 self.cardBackgroundAlpha = loadedPreferences.cardBackgroundAlpha
                 self.textColor = loadedPreferences.textColor

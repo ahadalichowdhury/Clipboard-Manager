@@ -249,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Create and show the history window
         historyWindow = HistoryWindowController(items: items)
         
-        // Apply appearance settings to the history window
+        // Apply appearance settings to the history window based on preferences
         if let window = historyWindow?.window {
             let prefs = Preferences.shared
             if prefs.useSystemAppearance {
@@ -329,7 +329,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // Instead of creating a new window, just update the items in the existing window
             window.updateItems(getClipboardHistory())
             
-            // Apply appearance settings to the history window
+            // Apply appearance settings to the history window based on preferences
             if let historyWindowObj = window.window {
                 let prefs = Preferences.shared
                 if prefs.useSystemAppearance {
@@ -353,15 +353,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     private func applyAppearanceSettings() {
-        let prefs = Preferences.shared
+        // Set the app's appearance to always follow system appearance
+        NSApp.appearance = nil // Use system appearance
         
-        // Set the app's appearance based on preferences
-        if prefs.useSystemAppearance {
-            NSApp.appearance = nil // Use system appearance
-        } else if prefs.darkMode {
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-        } else {
-            NSApp.appearance = NSAppearance(named: .aqua)
+        // Apply the same system appearance to all windows except the clipboard history window
+        for window in NSApp.windows {
+            // Skip the clipboard history window - it will be handled separately
+            if window != historyWindow?.window {
+                window.appearance = nil // Always use system appearance
+            }
         }
     }
     

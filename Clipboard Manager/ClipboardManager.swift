@@ -143,14 +143,31 @@ class ClipboardManager {
         // Check if we need to trim history based on new max history items setting
         let prefs = Preferences.shared
         
-        // Limit history size (only remove unpinned items)
-        let unpinnedItems = history.filter { !$0.isPinned }
+        // Enforce the max history limit (accounting for pinned items)
         let pinnedItems = history.filter { $0.isPinned }
+        let unpinnedItems = history.filter { !$0.isPinned }
         
-        if unpinnedItems.count > prefs.maxHistoryItems {
-            let itemsToKeep = unpinnedItems.prefix(prefs.maxHistoryItems)
-            history = Array(itemsToKeep) + pinnedItems
+        // Calculate how many unpinned items we can keep
+        let maxUnpinnedItems = max(0, prefs.maxHistoryItems - pinnedItems.count)
+        
+        // If we have more unpinned items than allowed, remove the oldest ones
+        if unpinnedItems.count > maxUnpinnedItems {
+            // Sort unpinned items by timestamp (newest first)
+            let sortedUnpinnedItems = unpinnedItems.sorted { $0.timestamp > $1.timestamp }
+            
+            // Keep only the newest maxUnpinnedItems
+            let itemsToKeep = sortedUnpinnedItems.prefix(maxUnpinnedItems)
+            
+            // Create a set of IDs to keep for efficient lookup
+            let idsToKeep = Set(itemsToKeep.map { $0.id })
+            
+            // Remove items that are not in the keep list and not pinned
+            history = history.filter { idsToKeep.contains($0.id) || $0.isPinned }
+            
+            // Save the updated history to disk
             saveHistory()
+            
+            print("Trimmed history to \(history.count) items (\(pinnedItems.count) pinned, \(maxUnpinnedItems) unpinned)")
             
             // Notify that history was updated
             NotificationCenter.default.post(name: NSNotification.Name("ClipboardHistoryUpdated"), object: nil)
@@ -174,6 +191,7 @@ class ClipboardManager {
     
     func getHistory() -> [ClipboardItem] {
         print("Getting clipboard history, \(history.count) items available")
+        
         // Return sorted history with pinned items at the top, then by timestamp (newest first)
         return history.sorted { (item1, item2) -> Bool in
             if item1.isPinned && !item2.isPinned {
@@ -455,16 +473,29 @@ class ClipboardManager {
         // Get max history items from preferences
         let prefs = Preferences.shared
         
-        // Limit history size (only remove unpinned items)
-        let unpinnedItems = history.filter { !$0.isPinned }
+        // Enforce the max history limit (accounting for pinned items)
         let pinnedItems = history.filter { $0.isPinned }
+        let unpinnedItems = history.filter { !$0.isPinned }
         
-        if unpinnedItems.count > prefs.maxHistoryItems {
-            let itemsToKeep = unpinnedItems.prefix(prefs.maxHistoryItems)
-            history = Array(itemsToKeep) + pinnedItems
+        // Calculate how many unpinned items we can keep
+        let maxUnpinnedItems = max(0, prefs.maxHistoryItems - pinnedItems.count)
+        
+        // If we have more unpinned items than allowed, remove the oldest ones
+        if unpinnedItems.count > maxUnpinnedItems {
+            // Sort unpinned items by timestamp (newest first)
+            let sortedUnpinnedItems = unpinnedItems.sorted { $0.timestamp > $1.timestamp }
+            
+            // Keep only the newest maxUnpinnedItems
+            let itemsToKeep = sortedUnpinnedItems.prefix(maxUnpinnedItems)
+            
+            // Create a set of IDs to keep for efficient lookup
+            let idsToKeep = Set(itemsToKeep.map { $0.id })
+            
+            // Remove items that are not in the keep list and not pinned
+            history = history.filter { idsToKeep.contains($0.id) || $0.isPinned }
         }
         
-        print("History now has \(history.count) items")
+        print("History now has \(history.count) items (\(pinnedItems.count) pinned, \(unpinnedItems.count) unpinned, max unpinned: \(maxUnpinnedItems))")
         
         // Save history to file
         saveHistory()
