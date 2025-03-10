@@ -153,7 +153,8 @@ class ClipboardItemCard: NSView {
             }
         } else {
             // Setup text label for text content
-            contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
+            // Adjust width to leave space for buttons (120px from right edge)
+            contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 150, height: frame.height - 32))
             contentLabel.isEditable = false
             contentLabel.isBordered = false
             contentLabel.drawsBackground = false
@@ -163,7 +164,7 @@ class ClipboardItemCard: NSView {
             contentLabel.autoresizingMask = [.width, .height]
             contentLabel.font = NSFont.systemFont(ofSize: 14)
             contentLabel.allowsEditingTextAttributes = true
-            contentLabel.preferredMaxLayoutWidth = frame.width - 80
+            contentLabel.preferredMaxLayoutWidth = frame.width - 150 // Adjust preferred width to match frame
             
             // Set content with highlighting if needed
             updateContentWithHighlight()
@@ -1860,6 +1861,104 @@ class HistoryWindowController: NSWindowController {
             
             // Otherwise close the window
             window?.close()
+            return true
+            
+        case 49: // Space key
+            if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
+                let item = displayItems[selectedItemIndex]
+                
+                // Show preview alert with the item's content
+                let alert = NSAlert()
+                alert.messageText = "Preview"
+                
+                if item.isImage {
+                    // For images, show dimensions or a placeholder message
+                    if let image = item.getImage() {
+                        alert.informativeText = "Image: \(Int(image.size.width))x\(Int(image.size.height)) pixels"
+                    } else {
+                        alert.informativeText = "Image preview not available"
+                    }
+                } else {
+                    // Create a scroll view for the preview content
+                    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+                    scrollView.hasVerticalScroller = true
+                    scrollView.hasHorizontalScroller = false
+                    scrollView.autohidesScrollers = true
+                    scrollView.borderType = .bezelBorder
+                    
+                    // Create a text view for the content
+                    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 390, height: 200))
+                    textView.isEditable = false
+                    textView.isSelectable = true
+                    textView.font = NSFont.systemFont(ofSize: 12)
+                    textView.textContainer?.containerSize = NSSize(width: 390, height: CGFloat.greatestFiniteMagnitude)
+                    textView.textContainer?.widthTracksTextView = true
+                    textView.isHorizontallyResizable = false
+                    textView.isVerticallyResizable = true
+                    textView.autoresizingMask = [.width]
+                    
+                    // Set background color based on appearance
+                    let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    textView.backgroundColor = isDark ? NSColor(white: 0.2, alpha: 1.0) : NSColor.white
+                    
+                    if item.isRichText, let richTextData = item.richTextData {
+                        // Handle rich text content
+                        do {
+                            let attributedString = try NSAttributedString(
+                                data: richTextData,
+                                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                documentAttributes: nil
+                            )
+                            
+                            // Create a mutable copy to modify text color if needed
+                            let mutableString = NSMutableAttributedString(attributedString: attributedString)
+                            
+                            // Check if the text has any color attributes
+                            let fullRange = NSRange(location: 0, length: mutableString.length)
+                            var hasColorAttribute = false
+                            mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, _, stop in
+                                if value != nil {
+                                    hasColorAttribute = true
+                                    stop.pointee = true
+                                }
+                            }
+                            
+                            // If no explicit color is set, apply system color
+                            if !hasColorAttribute {
+                                let textColor = isDark ? NSColor.white : NSColor.black
+                                mutableString.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                            }
+                            
+                            textView.textStorage?.setAttributedString(mutableString)
+                        } catch {
+                            print("Error displaying rich text: \(error)")
+                            // Fallback to plain text if there's an error
+                            textView.string = item.content
+                            // Set text color for plain text fallback
+                            textView.textColor = isDark ? NSColor.white : NSColor.black
+                        }
+                    } else {
+                        // Handle plain text content
+                        textView.string = item.content
+                        // Set text color for plain text
+                        textView.textColor = isDark ? NSColor.white : NSColor.black
+                    }
+                    
+                    scrollView.documentView = textView
+                    alert.accessoryView = scrollView
+                }
+                
+                alert.addButton(withTitle: "Close")
+                alert.window.minSize = NSSize(width: 400, height: 300) // Set minimum size for better readability
+                
+                // Set alert appearance to match system
+                alert.window.appearance = NSApp.effectiveAppearance
+                
+                alert.beginSheetModal(for: self.window!) { _ in
+                    // Ensure focus returns to the window after closing the preview
+                    self.window?.makeFirstResponder(self.containerView)
+                }
+            }
             return true
             
         case 3: // F key
