@@ -432,21 +432,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Show a notification that the item was copied
         showCopiedNotification(item.isImage ? "Image" : item.content)
         
-        // Give the system a moment to process the clipboard change
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            // Check if we should auto-paste
-            let prefs = Preferences.shared
-            if prefs.autoPaste {
-                // Pass information about whether this is a rich text item
-                self.simulatePasteKeystroke(isRichText: item.isRichText || item.hasMultipleFormats)
-            } else {
-                // Show a notification to manually paste
-                let notification = NSUserNotification()
-                notification.title = "Copied to Clipboard"
-                notification.informativeText = "Press Cmd+V to paste"
-                notification.soundName = NSUserNotificationDefaultSoundName
-                NSUserNotificationCenter.default.deliver(notification)
-            }
+        // Only show manual paste notification if auto-paste is disabled and not called from HistoryWindowController
+        // We can detect this by checking if we're on the main thread
+        if !Preferences.shared.autoPaste && Thread.isMainThread {
+            // Show a notification to manually paste
+            let notification = NSUserNotification()
+            notification.title = "Copied to Clipboard"
+            notification.informativeText = "Press Cmd+V to paste"
+            notification.soundName = NSUserNotificationDefaultSoundName
+            NSUserNotificationCenter.default.deliver(notification)
         }
     }
     

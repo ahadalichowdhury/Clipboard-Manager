@@ -1372,18 +1372,12 @@ class HistoryWindowController: NSWindowController {
         
         // Get the app delegate
         if let appDelegate = NSApp.delegate as? AppDelegate {
+            // Store the target application before closing the window
+            let targetApp = self.targetApplication
+            
             // Close the window first
             if let window = self.window, Preferences.shared.closeAfterCopy {
                 window.close()
-            }
-            
-            // Reactivate the target application before copying/pasting
-            if let targetApp = self.targetApplication {
-                print("Reactivating target app: \(targetApp.localizedName ?? "Unknown")")
-                targetApp.activate(options: .activateIgnoringOtherApps)
-                
-                // Small delay to ensure the app is activated
-                Thread.sleep(forTimeInterval: 0.1)
             }
             
             // Find the index of the item
@@ -1393,8 +1387,29 @@ class HistoryWindowController: NSWindowController {
             let menuItem = NSMenuItem()
             menuItem.tag = itemIndex
             
-            // Copy the item to clipboard and paste if needed
+            // Copy the item to clipboard
             appDelegate.copyItemToClipboard(menuItem)
+            
+            // Reactivate the target application with a more robust approach
+            if let targetApp = targetApp {
+                print("Reactivating target app: \(targetApp.localizedName ?? "Unknown")")
+                
+                // Use a slightly longer delay to ensure the window is fully closed
+                // and the clipboard operation is complete before activating the target app
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Activate the target application with options to bring it to front
+                    targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                    
+                    // Give the app time to fully activate and restore focus
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        // If auto-paste is enabled, simulate paste keystroke
+                        if Preferences.shared.autoPaste {
+                            // Use the PasteManager directly for better control
+                            PasteManager.shared.paste(isRichText: item.isRichText || item.hasMultipleFormats)
+                        }
+                    }
+                }
+            }
         }
     }
     

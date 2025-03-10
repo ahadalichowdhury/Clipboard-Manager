@@ -218,49 +218,51 @@ class PasteManager {
     
     // Direct paste method using CGEvent
     private func tryDirectPasteMethod() -> Bool {
-        Logger.shared.log("PasteManager: Trying direct paste method (CGEvent)")
+        Logger.shared.log("PasteManager: Trying direct paste method")
         
-        // Try to get and activate the frontmost app
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
-            Logger.shared.log("PasteManager: Could not determine frontmost app")
+        // Ensure the frontmost application is not our app
+        if let frontApp = NSWorkspace.shared.frontmostApplication,
+           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
             return false
         }
         
-        Logger.shared.log("PasteManager: Activating \(frontmostApp.localizedName ?? "Unknown")")
-        frontmostApp.activate(options: .activateIgnoringOtherApps)
+        // Make sure the target application has focus
+        // Small delay to ensure the app is ready to receive keyboard events
+        Thread.sleep(forTimeInterval: 0.1)
         
-        // Small delay to ensure activation
-        usleep(100000) // 100ms
-        
-        // Create a CGEventSource
+        // Create a source
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            Logger.shared.log("PasteManager: Failed to create CGEventSource")
+            Logger.shared.log("PasteManager: Failed to create event source")
             return false
         }
         
-        // Create keydown event for Command+V (paste)
+        // Create key down event for Command+V
         guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) else {
             Logger.shared.log("PasteManager: Failed to create keydown event")
             return false
         }
         keyVDown.flags = .maskCommand
         
-        // Create keyup event for Command+V
+        // Create key up event for Command+V
         guard let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
             Logger.shared.log("PasteManager: Failed to create keyup event")
             return false
         }
         keyVUp.flags = .maskCommand
         
-        // Post the events
+        // Post the events with proper delays
         Logger.shared.log("PasteManager: Posting keydown event...")
         keyVDown.post(tap: .cghidEventTap)
         
-        // Small delay between keydown and keyup
-        usleep(50000) // 50ms delay
+        // Increased delay between keydown and keyup for better reliability
+        usleep(100000) // 100ms delay
         
         Logger.shared.log("PasteManager: Posting keyup event...")
         keyVUp.post(tap: .cghidEventTap)
+        
+        // Add a small delay after posting events
+        Thread.sleep(forTimeInterval: 0.1)
         
         Logger.shared.log("PasteManager: Direct paste method completed")
         
