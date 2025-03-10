@@ -1004,6 +1004,8 @@ class HistoryWindowController: NSWindowController {
     private var selectedItemIndex: Int = 0 // Track the currently selected item
     private var selectedCard: ClipboardItemCard? // Track the currently selected card
     private var targetApplication: NSRunningApplication? // Store the target application
+    private var currentlyEditingItemId: UUID? // Track the item being edited
+    private var nextItemToFocusAfterDeletion: UUID? // Track the next item to focus on after deletion
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -1083,6 +1085,9 @@ class HistoryWindowController: NSWindowController {
         
         // Register for edit item notifications
         NotificationCenter.default.addObserver(self, selector: #selector(editClipboardItem(_:)), name: NSNotification.Name("EditClipboardItem"), object: nil)
+        
+        // Register for delete item notifications
+        NotificationCenter.default.addObserver(self, selector: #selector(handleItemDeletion(_:)), name: NSNotification.Name("DeleteClipboardItem"), object: nil)
         
         // Set up keyboard event monitoring
         setupKeyboardMonitoring()
@@ -1197,6 +1202,9 @@ class HistoryWindowController: NSWindowController {
     }
     
     @objc private func tabChanged(_ sender: NSSegmentedControl) {
+        // Store the current selected item ID if any
+        let currentSelectedItemId = selectedCard?.item.id
+        
         currentTab = sender.selectedSegment
         
         // Update window title based on selected tab
@@ -1213,12 +1221,39 @@ class HistoryWindowController: NSWindowController {
             clearAllButton.title = "Unpin all"
         }
         
-        // Update the card views
+        // Update the filtered items
         updateFilteredItems()
-        updateCardViews()
+        
+        // Get items to display based on current tab and search filter
+        let displayItems: [ClipboardItem]
+        if searchText.isEmpty {
+            // No search filter, use tab filter only
+            if currentTab == 0 {
+                displayItems = items
+            } else {
+                displayItems = items.filter { $0.isPinned }
+            }
+        } else {
+            // Use filtered items
+            if currentTab == 0 {
+                displayItems = filteredItems
+            } else {
+                displayItems = filteredItems.filter { $0.isPinned }
+            }
+        }
+        
+        // Check if the currently selected item is visible in the new tab
+        if let currentSelectedItemId = currentSelectedItemId,
+           displayItems.contains(where: { $0.id == currentSelectedItemId }) {
+            // If the currently selected item is visible in the new tab, preserve its selection
+            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+        } else {
+            // Otherwise, just update normally
+            updateCardViews()
+        }
     }
     
-    private func updateCardViews() {
+    private func updateCardViews(preserveSelectedItemId: UUID? = nil) {
         // Remove existing cards
         containerView.subviews.forEach { $0.removeFromSuperview() }
         cardViews.removeAll()
@@ -1245,8 +1280,38 @@ class HistoryWindowController: NSWindowController {
             }
         }
         
-        // Reset selected item index to the most recent item (top item)
-        selectedItemIndex = 0
+        // Determine which item ID to preserve
+        var itemIdToPreserve: UUID? = nil
+        
+        // First priority: explicitly provided ID (from direct calls)
+        if let preserveId = preserveSelectedItemId, 
+           displayItems.contains(where: { $0.id == preserveId }) {
+            itemIdToPreserve = preserveId
+        } 
+        // Second priority: currently editing item
+        else if let editingId = currentlyEditingItemId,
+                displayItems.contains(where: { $0.id == editingId }) {
+            itemIdToPreserve = editingId
+        }
+        // Third priority: currently selected item
+        else if let currentId = selectedCard?.item.id,
+                displayItems.contains(where: { $0.id == currentId }) {
+            itemIdToPreserve = currentId
+        }
+        
+        // Update the selected index based on the item to preserve
+        if let idToPreserve = itemIdToPreserve,
+           let preserveIndex = displayItems.firstIndex(where: { $0.id == idToPreserve }) {
+            // Only update if different to avoid unnecessary jumps
+            if selectedItemIndex != preserveIndex {
+                selectedItemIndex = preserveIndex
+            }
+        } else if selectedCard == nil {
+            // Only reset to the first item if we don't have a current selection
+            selectedItemIndex = 0
+        }
+        
+        // Clear the selected card reference since we're rebuilding the view
         selectedCard = nil
         
         // Calculate container height based on number of items and preferences
@@ -1287,13 +1352,21 @@ class HistoryWindowController: NSWindowController {
             window?.title = searchText.isEmpty ? "Pinned Clipboard Items (\(displayItems.count) items)" : "Pinned Search Results (\(displayItems.count) items)"
         }
         
-        // Scroll to top after updating
-        scrollToTop()
+        // Scroll to selected item instead of top if we have a selection
+        if selectedCard != nil {
+            scrollToSelectedItem()
+        } else {
+            // Scroll to top after updating
+            scrollToTop()
+        }
     }
     
     @objc private func preferencesChanged() {
         // Update UI based on new preferences
         guard let window = self.window else { return }
+        
+        // Store the current selected item ID if any
+        let currentSelectedItemId = selectedCard?.item.id
         
         // Get preferences
         let prefs = Preferences.shared
@@ -1337,8 +1410,13 @@ class HistoryWindowController: NSWindowController {
             cardView.applyPreferences()
         }
         
-        // Update card views layout
-        updateCardViews()
+        // Update card views layout with preserved selection if possible
+        if let currentSelectedItemId = currentSelectedItemId,
+           items.contains(where: { $0.id == currentSelectedItemId }) {
+            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+        } else {
+            updateCardViews()
+        }
     }
     
     private func scrollToTop() {
@@ -1353,12 +1431,51 @@ class HistoryWindowController: NSWindowController {
     @objc private func historyUpdated() {
         // Get updated history
         if let appDelegate = NSApp.delegate as? AppDelegate {
+            // Store the current selected item ID if any
+            let currentSelectedItemId = selectedCard?.item.id
+            
+            // Update the items list
             items = appDelegate.getClipboardHistory()
             
             // Update filtered items based on current search text
-            updateFilteredItems()
+            // But don't call updateCardViews here, as it will be called below
+            if !searchText.isEmpty {
+                let searchLower = searchText.lowercased()
+                filteredItems = items.filter { item in
+                    if currentTab == 1 && !item.isPinned {
+                        return false
+                    }
+                    
+                    if item.isImage {
+                        // For images, we can only search by timestamp or other metadata
+                        return true
+                    } else {
+                        // Add safety check for empty content
+                        guard !item.content.isEmpty else { return false }
+                        return item.content.lowercased().contains(searchLower)
+                    }
+                }
+            } else {
+                filteredItems = items
+            }
             
-            updateCardViews()
+            // Check if we have a next item to focus on after deletion
+            if let nextItemId = nextItemToFocusAfterDeletion, 
+               items.contains(where: { $0.id == nextItemId }) {
+                // If we have a next item to focus on and it exists, focus on it
+                updateCardViews(preserveSelectedItemId: nextItemId)
+                // Clear the next item to focus on
+                nextItemToFocusAfterDeletion = nil
+            }
+            // If we don't have a next item to focus on, use the normal logic
+            else if let currentSelectedItemId = currentSelectedItemId,
+               items.contains(where: { $0.id == currentSelectedItemId }) {
+                // If the currently selected item still exists, preserve its selection
+                updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+            } else {
+                // Otherwise, just update normally
+                updateCardViews()
+            }
         }
     }
     
@@ -1684,6 +1801,9 @@ class HistoryWindowController: NSWindowController {
         // Convert card frame to scroll view coordinates
         let cardFrameInScrollView = containerView.convert(selectedCard.frame, to: scrollView.contentView)
         
+        // Check if the card is already visible in the current view
+        let isCardVisible = scrollView.contentView.visibleRect.intersects(cardFrameInScrollView)
+        
         if isWrappingAround {
             // For wrap-around scrolling, create a more sophisticated animation
             // First, determine if we're wrapping from top to bottom or bottom to top
@@ -1717,7 +1837,8 @@ class HistoryWindowController: NSWindowController {
                     self.scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
                 }, completionHandler: nil)
             })
-        } else {
+        } else if !isCardVisible {
+            // Only scroll if the card is not already visible
             // Regular scrolling with simple animation
             NSAnimationContext.runAnimationGroup({ context in
                 // Set animation duration - adjust this value for desired smoothness
@@ -1728,6 +1849,7 @@ class HistoryWindowController: NSWindowController {
                 scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
             }, completionHandler: nil)
         }
+        // If the card is already visible, don't scroll at all
     }
     
     @objc private func cardClicked(_ notification: Notification) {
@@ -1768,6 +1890,10 @@ class HistoryWindowController: NSWindowController {
         guard let itemId = notification.object as? UUID,
               let itemIndex = items.firstIndex(where: { $0.id == itemId }) else { return }
         
+        // Set the currently editing item ID
+        currentlyEditingItemId = itemId
+        print("Starting to edit item with ID: \(itemId)")
+        
         let item = items[itemIndex]
         
         // If it's an image, just show the image viewer instead of edit dialog
@@ -1791,6 +1917,9 @@ class HistoryWindowController: NSWindowController {
             } catch {
                 print("Error opening image: \(error)")
             }
+            
+            // Clear the currently editing item ID
+            currentlyEditingItemId = nil
             return
         }
         
@@ -1847,16 +1976,59 @@ class HistoryWindowController: NSWindowController {
             // User clicked Save
             let updatedContent = textView.string
             
+            // IMPORTANT: Store the item ID that's being edited in a local variable
+            // to ensure it's not affected by any other operations
+            let editingItemId = itemId
+            print("Saving edits for item with ID: \(editingItemId)")
+            
+            // First, register for the notification
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleItemUpdated(_:)),
+                name: NSNotification.Name("ClipboardHistoryUpdated"),
+                object: nil
+            )
+            
+            // Store the ID of the item being edited for use in the notification handler
+            self.currentlyEditingItemId = editingItemId
+            
             // Update the item in the clipboard manager
             NotificationCenter.default.post(
                 name: NSNotification.Name("UpdateClipboardItem"),
                 object: nil,
-                userInfo: ["itemId": itemId, "content": updatedContent]
+                userInfo: ["itemId": editingItemId, "content": updatedContent]
             )
+        } else {
+            // User clicked Cancel, clear the currently editing item ID
+            currentlyEditingItemId = nil
         }
         
         // Ensure we're still using accessory activation policy
         NSApp.setActivationPolicy(.accessory)
+    }
+    
+    @objc private func handleItemUpdated(_ notification: Notification) {
+        // Remove this observer immediately to prevent multiple calls
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSNotification.Name("ClipboardHistoryUpdated"),
+            object: nil
+        )
+        
+        // Get the ID of the item that was being edited
+        if let editingItemId = currentlyEditingItemId {
+            print("History updated after editing item: \(editingItemId)")
+            
+            // Update the UI with the edited item selected
+            DispatchQueue.main.async { [weak self] in
+                // Focus on the item we just edited
+                print("Focusing on edited item with ID: \(editingItemId)")
+                self?.updateCardViews(preserveSelectedItemId: editingItemId)
+                
+                // Clear the currently editing item ID
+                self?.currentlyEditingItemId = nil
+            }
+        }
     }
     
     @objc private func searchTextChanged(_ sender: NSSearchField) {
@@ -1888,9 +2060,20 @@ class HistoryWindowController: NSWindowController {
         
         // Add safety check for empty search text
         if newSearchText.isEmpty {
+            // Store the current selected item ID if any
+            let currentSelectedItemId = selectedCard?.item.id
+            
             searchText = ""
             filteredItems = items
-            updateCardViews()
+            
+            // Preserve selection if possible
+            if let currentSelectedItemId = currentSelectedItemId,
+               items.contains(where: { $0.id == currentSelectedItemId }) {
+                updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+            } else {
+                updateCardViews()
+            }
+            
             showSearchLoading(false)
             return
         }
@@ -1906,7 +2089,13 @@ class HistoryWindowController: NSWindowController {
         if searchText.isEmpty {
             filteredItems = items
             DispatchQueue.main.async { [weak self] in
-                self?.updateCardViews()
+                // Preserve current selection if possible
+                if let self = self, let currentSelectedItemId = self.selectedCard?.item.id,
+                   self.items.contains(where: { $0.id == currentSelectedItemId }) {
+                    self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+                } else {
+                    self?.updateCardViews()
+                }
             }
             return
         }
@@ -1925,11 +2114,22 @@ class HistoryWindowController: NSWindowController {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.filteredItems = self.items
-                    self.updateCardViews()
+                    
+                    // Preserve current selection if possible
+                    if let currentSelectedItemId = self.selectedCard?.item.id,
+                       self.items.contains(where: { $0.id == currentSelectedItemId }) {
+                        self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+                    } else {
+                        self.updateCardViews()
+                    }
+                    
                     self.showSearchLoading(false)
                 }
                 return
             }
+            
+            // Store the current selected item ID before filtering
+            let currentSelectedItemId = self.selectedCard?.item.id
             
             let filtered = self.items.filter { item in
                 if self.currentTab == 1 && !item.isPinned {
@@ -1950,7 +2150,16 @@ class HistoryWindowController: NSWindowController {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.filteredItems = filtered
-                self.updateCardViews()
+                
+                // Check if the currently selected item is in the filtered results
+                if let currentSelectedItemId = currentSelectedItemId,
+                   filtered.contains(where: { $0.id == currentSelectedItemId }) {
+                    // If the currently selected item is in the filtered results, preserve its selection
+                    self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+                } else {
+                    // Otherwise, just update normally
+                    self.updateCardViews()
+                }
                 
                 // Hide loading indicator
                 self.showSearchLoading(false)
@@ -1987,10 +2196,20 @@ class HistoryWindowController: NSWindowController {
     
     @objc private func searchCancelled() {
         // This is called when the user clicks the X button in the search field
+        // Store the current selected item ID if any
+        let currentSelectedItemId = selectedCard?.item.id
+        
         searchText = ""
         searchField.stringValue = ""
         filteredItems = items
-        updateCardViews()
+        
+        // Preserve selection if possible
+        if let currentSelectedItemId = currentSelectedItemId,
+           items.contains(where: { $0.id == currentSelectedItemId }) {
+            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
+        } else {
+            updateCardViews()
+        }
         
         // Reset focus to the container view
         window?.makeFirstResponder(containerView)
@@ -2001,6 +2220,38 @@ class HistoryWindowController: NSWindowController {
         // It's more responsive than waiting for the action to be triggered
         if let searchField = notification.object as? NSSearchField {
             searchTextChanged(searchField)
+        }
+    }
+    
+    // Add this new method to handle item deletion
+    @objc private func handleItemDeletion(_ notification: Notification) {
+        // Get the item ID being deleted
+        guard let itemId = notification.object as? UUID else { return }
+        
+        // Get the current display items based on tab and search filter
+        let displayItems: [ClipboardItem]
+        if searchText.isEmpty {
+            displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
+        } else {
+            displayItems = currentTab == 0 ? filteredItems : filteredItems.filter { $0.isPinned }
+        }
+        
+        // Find the index of the item being deleted
+        if let currentIndex = displayItems.firstIndex(where: { $0.id == itemId }) {
+            // Determine the next item to focus on
+            if currentIndex < displayItems.count - 1 {
+                // If not the last item, focus on the next item
+                nextItemToFocusAfterDeletion = displayItems[currentIndex + 1].id
+                print("Will focus on next item: \(nextItemToFocusAfterDeletion!)")
+            } else if displayItems.count > 1 {
+                // If it's the last item and there are other items, focus on the first item
+                nextItemToFocusAfterDeletion = displayItems[0].id
+                print("Will focus on first item: \(nextItemToFocusAfterDeletion!)")
+            } else {
+                // If it's the only item, there's nothing to focus on
+                nextItemToFocusAfterDeletion = nil
+                print("No item to focus on after deletion")
+            }
         }
     }
 }
