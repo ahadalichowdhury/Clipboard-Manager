@@ -82,6 +82,9 @@ class ClipboardItemCard: NSView {
                 // Make sure double-click takes precedence
                 // This line was causing build errors - NSClickGestureRecognizer doesn't have this method
                 // clickGesture.requireGestureRecognizerToFail(doubleClickGesture)
+                
+                // Make the image view accept touch events
+                imageView.allowedTouchTypes = [.direct]
             }
             
             // Add format indicator for images
@@ -191,8 +194,8 @@ class ClipboardItemCard: NSView {
             contentLabel.addGestureRecognizer(doubleClickGesture)
             contentLabel.addGestureRecognizer(clickGesture)
             
-            // Make sure the content label accepts mouse events
-            contentLabel.acceptsTouchEvents = true
+            // Make the content label accept touch events
+            contentLabel.allowedTouchTypes = [.direct]
             
             // Add save button for text items (similar to image items)
             saveButton = NSButton(frame: NSRect(x: frame.width - 120, y: frame.height - 30, width: 24, height: 24))
@@ -735,42 +738,33 @@ class ClipboardItemCard: NSView {
             // Use modern UTType API
             switch fileExtension {
             case "txt":
-                if let txtType = UTType(filenameExtension: "txt") {
-                    print("Using UTType for txt: \(txtType.identifier)")
-                    savePanel.allowedContentTypes = [txtType]
-                } else {
-                    print("Falling back to allowedFileTypes for txt")
-                    savePanel.allowedFileTypes = ["txt"]
-                }
+                savePanel.allowedContentTypes = [UTType.plainText]
             case "rtf":
-                if let rtfType = UTType(filenameExtension: "rtf") {
-                    print("Using UTType for rtf: \(rtfType.identifier)")
-                    savePanel.allowedContentTypes = [rtfType]
-                } else {
-                    print("Falling back to allowedFileTypes for rtf")
-                    savePanel.allowedFileTypes = ["rtf"]
-                }
+                savePanel.allowedContentTypes = [UTType.rtf]
             case "doc":
                 if let docType = UTType(filenameExtension: "doc") {
-                    print("Using UTType for doc: \(docType.identifier)")
                     savePanel.allowedContentTypes = [docType]
                 } else {
-                    print("Falling back to allowedFileTypes for doc")
-                    savePanel.allowedFileTypes = ["doc"]
+                    // Use a more generic type as fallback
+                    savePanel.allowedContentTypes = [UTType.text]
                 }
             default:
-                if let txtType = UTType(filenameExtension: "txt") {
-                    print("Using UTType for default txt: \(txtType.identifier)")
-                    savePanel.allowedContentTypes = [txtType]
-                } else {
-                    print("Falling back to allowedFileTypes for default txt")
-                    savePanel.allowedFileTypes = ["txt"]
-                }
+                savePanel.allowedContentTypes = [UTType.plainText]
             }
         } else {
             // Fallback for older macOS versions
             print("Using older macOS API with allowedFileTypes")
-            savePanel.allowedFileTypes = [fileExtension]
+            // Try to use UTType if available
+            if #available(macOS 11.0, *) {
+                if let utType = UTType(filenameExtension: fileExtension) {
+                    savePanel.allowedContentTypes = [utType]
+                } else {
+                    // Last resort fallback
+                    savePanel.allowedFileTypes = [fileExtension]
+                }
+            } else {
+                savePanel.allowedFileTypes = [fileExtension]
+            }
         }
         
         savePanel.canCreateDirectories = true
@@ -903,7 +897,16 @@ class ClipboardItemCard: NSView {
         } else {
             // Fallback for older macOS versions
             print("Using older macOS API with allowedFileTypes")
-            savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
+            // Try to use UTType if available
+            if #available(macOS 11.0, *) {
+                if fileType == .png {
+                    savePanel.allowedContentTypes = [UTType.png]
+                } else {
+                    savePanel.allowedContentTypes = [UTType.jpeg]
+                }
+            } else {
+                savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
+            }
         }
         savePanel.canCreateDirectories = true
         savePanel.isExtensionHidden = false
@@ -1111,6 +1114,78 @@ class ClipboardItemCard: NSView {
 
 // Simple EditableTextView class for rich text editing
 class EditableTextView: NSTextView {
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        setupTextColor()
+        setupAppearanceObserver()
+        setupTextContainer()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupTextColor()
+        setupAppearanceObserver()
+        setupTextContainer()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    private func setupAppearanceObserver() {
+        // Register for appearance change notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(effectiveAppearanceDidChange),
+            name: NSWindow.didChangeBackingPropertiesNotification,
+            object: nil
+        )
+        
+        // Also observe effective appearance changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(effectiveAppearanceDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func effectiveAppearanceDidChange() {
+        updateTextColorForEntireText()
+    }
+    
+    private func setupTextColor() {
+        // Set the default text color based on appearance
+        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let textColor = isDarkMode ? NSColor.white : NSColor.black
+        let backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
+        
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        
+        // Update typing attributes
+        var attributes = self.typingAttributes
+        attributes[.foregroundColor] = textColor
+        self.typingAttributes = attributes
+        
+        // Apply to any existing text, but preserve existing color attributes
+        if let textStorage = self.textStorage, textStorage.length > 0 {
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            
+            // Only apply color to text that doesn't have a color attribute
+            textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                if value == nil {
+                    // Only apply color if there isn't already a color attribute
+                    textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
+                }
+            }
+            
+            // Force layout update
+            self.layoutManager?.ensureLayout(for: self.textContainer!)
+            self.needsDisplay = true
+        }
+    }
+    
     override func keyDown(with event: NSEvent) {
         // Check if it's Return/Enter key
         if event.keyCode == 36 {
@@ -1118,6 +1193,71 @@ class EditableTextView: NSTextView {
             self.insertText("\n", replacementRange: self.selectedRange)
         } else {
             super.keyDown(with: event)
+        }
+    }
+    
+    // Override to ensure text color is maintained when typing
+    override func didChangeText() {
+        super.didChangeText()
+        
+        // Apply the appropriate text color based on appearance
+        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let textColor = isDarkMode ? NSColor.white : NSColor.black
+        
+        // Get the typing attributes and update the foreground color
+        let typingAttributes = self.typingAttributes
+        var updatedAttributes = typingAttributes
+        
+        // Only set foreground color if it's not already set
+        if typingAttributes[.foregroundColor] == nil {
+            updatedAttributes[.foregroundColor] = textColor
+            self.typingAttributes = updatedAttributes
+        }
+    }
+    
+    // Method to update text color for the entire text
+    func updateTextColorForEntireText() {
+        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let textColor = isDarkMode ? NSColor.white : NSColor.black
+        let backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
+        
+        // Update background color
+        self.backgroundColor = backgroundColor
+        
+        // Update text color for all text, but preserve other attributes
+        if let textStorage = self.textStorage, textStorage.length > 0 {
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            
+            // Instead of applying color to everything, only apply to text that doesn't have a color
+            textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                if value == nil {
+                    // Only apply color if there isn't already a color attribute
+                    textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
+                }
+            }
+            
+            // Force layout update
+            self.layoutManager?.ensureLayout(for: self.textContainer!)
+            self.needsDisplay = true
+        }
+        
+        // Update typing attributes for new text
+        var attributes = self.typingAttributes
+        attributes[.foregroundColor] = textColor
+        self.typingAttributes = attributes
+    }
+    
+    private func setupTextContainer() {
+        // Ensure text container is properly configured
+        if let container = self.textContainer {
+            container.widthTracksTextView = true
+            container.containerSize = NSSize(width: self.bounds.width, height: CGFloat.greatestFiniteMagnitude)
+        }
+        
+        // Ensure layout manager is properly configured
+        if let layoutManager = self.layoutManager {
+            layoutManager.allowsNonContiguousLayout = false
+            layoutManager.usesFontLeading = true
         }
     }
 }
@@ -1664,7 +1804,13 @@ class HistoryWindowController: NSWindowController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     print("Activating target application after delay")
                     // Activate the target application with options to bring it to front
-                    targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                    if #available(macOS 14.0, *) {
+                        // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+                        targetApp.activate(options: .activateAllWindows)
+                    } else {
+                        // For older macOS versions, use the previous API
+                        targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                    }
                     
                     // Give the app time to fully activate and restore focus
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -1959,8 +2105,12 @@ class HistoryWindowController: NSWindowController {
                             print("Error displaying rich text: \(error)")
                             // Fallback to plain text if there's an error
                             textView.string = item.content
-                            // Set text color for plain text fallback
-                            textView.textColor = isDark ? NSColor.white : NSColor.black
+                            // Ensure text color is maintained for plain text fallback
+                            textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+                            // Force layout and display update
+                            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                            textView.needsDisplay = true
+                            print("Falling back to plain text due to error")
                         }
                     } else {
                         // Handle plain text content
@@ -1970,6 +2120,19 @@ class HistoryWindowController: NSWindowController {
                     }
                     
                     scrollView.documentView = textView
+                    scrollView.hasVerticalScroller = true
+                    scrollView.hasHorizontalScroller = false
+                    scrollView.autohidesScrollers = true
+                    
+                    // Make sure the text view fills the scroll view
+                    textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: scrollView.contentSize.height)
+                    textView.minSize = NSSize(width: 0, height: 0)
+                    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+                    textView.isVerticallyResizable = true
+                    textView.isHorizontallyResizable = false
+                    textView.autoresizingMask = [.width]
+                    
+                    // Set the scroll view as the accessory view
                     alert.accessoryView = scrollView
                 }
                 
@@ -2230,7 +2393,14 @@ class HistoryWindowController: NSWindowController {
             scrollView.borderType = .bezelBorder
             
             // Use a text view for better multiline editing
-            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: scrollView.frame.width, height: scrollView.frame.height))
+            let textContainer = NSTextContainer(containerSize: NSSize(width: scrollView.frame.width, height: CGFloat.greatestFiniteMagnitude))
+            let layoutManager = NSLayoutManager()
+            let textStorage = NSTextStorage()
+            
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+            
+            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: scrollView.frame.width, height: scrollView.frame.height), textContainer: textContainer)
             
             // Store the text view in a property so it can be accessed if needed
             self.currentEditTextView = textView
@@ -2241,11 +2411,17 @@ class HistoryWindowController: NSWindowController {
             textView.isRichText = true  // Always enable rich text editing
             textView.allowsUndo = true
             textView.font = NSFont.systemFont(ofSize: 14)
-            textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
-            textView.textContainer?.widthTracksTextView = true
-            textView.isHorizontallyResizable = false
-            textView.isVerticallyResizable = true
-            textView.autoresizingMask = [.width]
+            
+            // These settings are now handled when setting up the scroll view
+            // textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+            // textView.textContainer?.widthTracksTextView = true
+            // textView.isHorizontallyResizable = false
+            // textView.isVerticallyResizable = true
+            // textView.autoresizingMask = [.width]
+            
+            // Set text color based on window appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            textView.textColor = isDark ? .white : .black
             
             // Check if we have rich text data
             if item.isRichText, let richTextData = item.richTextData {
@@ -2265,19 +2441,56 @@ class HistoryWindowController: NSWindowController {
                     // Set the attributed string to the text view
                     textView.textStorage?.setAttributedString(attributedString)
                     print("Loaded rich text data for editing")
+                    
+                    // Only apply text color to text that doesn't have color attributes
+                    if let textStorage = textView.textStorage {
+                        let fullRange = NSRange(location: 0, length: textStorage.length)
+                        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        let textColor = isDarkMode ? NSColor.white : NSColor.black
+                        
+                        // Only apply color to text that doesn't have a color attribute
+                        textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                            if value == nil {
+                                // Only apply color if there isn't already a color attribute
+                                textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
+                            }
+                        }
+                    }
+                    
+                    // Force layout and display update
+                    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                    textView.needsDisplay = true
                 } catch {
                     print("Error displaying rich text in editor: \(error)")
                     // Fall back to plain text if there's an error
                     textView.string = item.content
+                    // Ensure text color is maintained for plain text fallback
+                    textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
                     print("Falling back to plain text due to error")
                 }
             } else {
                 // No rich text data, just set plain text
                 textView.string = item.content
+                // Ensure text color is maintained for plain text
+                textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+                // Force layout and display update
+                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                textView.needsDisplay = true
                 print("No rich text data, using plain text but enabling rich text editing")
             }
             
             scrollView.documentView = textView
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.autohidesScrollers = true
+            
+            // Make sure the text view fills the scroll view
+            textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: scrollView.contentSize.height)
+            textView.minSize = NSSize(width: 0, height: 0)
+            textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.isVerticallyResizable = true
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
             
             // Set the scroll view as the accessory view
             alert.accessoryView = scrollView
@@ -2286,6 +2499,38 @@ class HistoryWindowController: NSWindowController {
             NSApp.activate(ignoringOtherApps: true)
             alert.window.level = .floating
             
+            // Set window appearance to match system
+            alert.window.appearance = NSApp.effectiveAppearance
+            
+            // Add observer for appearance changes to update text color
+            let appearanceObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeBackingPropertiesNotification,
+                object: alert.window,
+                queue: .main
+            ) { _ in
+                // Update text color when appearance changes, but preserve rich text attributes
+                if let textStorage = textView.textStorage {
+                    let fullRange = NSRange(location: 0, length: textStorage.length)
+                    let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    let textColor = isDarkMode ? NSColor.white : NSColor.black
+                    
+                    // Only apply color to text that doesn't have a color attribute
+                    textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                        if value == nil {
+                            // Only apply color if there isn't already a color attribute
+                            textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
+                        }
+                    }
+                    
+                    // Update background color
+                    textView.backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
+                    
+                    // Force layout update
+                    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                    textView.needsDisplay = true
+                }
+            }
+            
             // Make the alert window larger for better editing
             let window = alert.window
             let currentFrame = window.frame
@@ -2293,6 +2538,9 @@ class HistoryWindowController: NSWindowController {
             
             // Show the dialog
             let response = alert.runModal()
+            
+            // Remove the appearance observer
+            NotificationCenter.default.removeObserver(appearanceObserver)
             
             // Clear the current edit text view reference
             defer {
