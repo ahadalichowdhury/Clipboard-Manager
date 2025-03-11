@@ -1985,50 +1985,44 @@ class HistoryWindowController: NSWindowController {
         
         switch keyCode {
         case 125: // Down arrow
-            if selectedItemIndex < displayItems.count - 1 {
+            if !displayItems.isEmpty {
                 // Deselect current item
                 updateCardSelection(at: selectedItemIndex, isSelected: false)
                 
-                // Select next item
-                selectedItemIndex += 1
+                if selectedItemIndex < displayItems.count - 1 {
+                    // Select next item
+                    selectedItemIndex += 1
+                } else {
+                    // Wrap around to the top when at the bottom
+                    selectedItemIndex = 0
+                }
+                
+                // Select the new item
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
                 
                 // Ensure the selected item is visible
-                scrollToSelectedItem()
-            } else if !displayItems.isEmpty {
-                // Wrap around to the top when at the bottom
-                updateCardSelection(at: selectedItemIndex, isSelected: false)
-                
-                // Select first item
-                selectedItemIndex = 0
-                updateCardSelection(at: selectedItemIndex, isSelected: true)
-                
-                // Ensure the selected item is visible with special wrap-around animation
-                scrollToSelectedItem(isWrappingAround: true)
+                scrollToSelectedItem(isWrappingAround: selectedItemIndex == 0)
             }
             return true
             
         case 126: // Up arrow
-            if selectedItemIndex > 0 {
+            if !displayItems.isEmpty {
                 // Deselect current item
                 updateCardSelection(at: selectedItemIndex, isSelected: false)
                 
-                // Select previous item
-                selectedItemIndex -= 1
+                if selectedItemIndex > 0 {
+                    // Select previous item
+                    selectedItemIndex -= 1
+                } else {
+                    // Wrap around to the bottom when at the top
+                    selectedItemIndex = displayItems.count - 1
+                }
+                
+                // Select the new item
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
                 
                 // Ensure the selected item is visible
-                scrollToSelectedItem()
-            } else if !displayItems.isEmpty {
-                // Wrap around to the bottom when at the top
-                updateCardSelection(at: selectedItemIndex, isSelected: false)
-                
-                // Select last item
-                selectedItemIndex = displayItems.count - 1
-                updateCardSelection(at: selectedItemIndex, isSelected: true)
-                
-                // Ensure the selected item is visible with special wrap-around animation
-                scrollToSelectedItem(isWrappingAround: true)
+                scrollToSelectedItem(isWrappingAround: selectedItemIndex == displayItems.count - 1)
             }
             return true
             
