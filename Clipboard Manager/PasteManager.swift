@@ -1538,8 +1538,8 @@ class PasteManager {
                 Logger.shared.log("PasteManager: Activating previous app: \(previousApp.localizedName ?? "Unknown")")
                 previousApp.activate(options: .activateIgnoringOtherApps)
                 
-                // Give the app time to activate
-                Thread.sleep(forTimeInterval: 0.2)
+                // Reduced delay to make paste operation faster
+                Thread.sleep(forTimeInterval: 0.05)
                 
                 // Try the universal paste on this app
                 universalPasteToFrontmostApp()
@@ -1561,7 +1561,7 @@ class PasteManager {
     // Helper method to perform a universal paste to the frontmost application
     private func universalPasteToFrontmostApp() {
         // Try multiple paste methods in sequence
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInteractive).async {
             // 1. Try direct paste with Command+V first (most universal)
             if self.tryUniversalDirectPaste() {
                 Logger.shared.log("PasteManager: Universal direct paste succeeded")
@@ -1570,7 +1570,7 @@ class PasteManager {
             }
             
             // 2. Try AppleScript methods
-            Thread.sleep(forTimeInterval: 0.2)
+            Thread.sleep(forTimeInterval: 0.05)
             if self.tryUniversalAppleScriptPaste() {
                 Logger.shared.log("PasteManager: Universal AppleScript paste succeeded")
                 Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (AppleScript Method) =====")
@@ -1578,7 +1578,7 @@ class PasteManager {
             }
             
             // 3. Try osascript as a last resort
-            Thread.sleep(forTimeInterval: 0.2)
+            Thread.sleep(forTimeInterval: 0.05)
             if self.tryUniversalOsascriptPaste() {
                 Logger.shared.log("PasteManager: Universal osascript paste succeeded")
                 Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (Osascript Method) =====")
@@ -1617,18 +1617,18 @@ class PasteManager {
         }
         keyVUp.flags = .maskCommand
         
-        // Post the events with proper delays
+        // Post the events with minimal delays
         Logger.shared.log("PasteManager: Posting keydown event...")
         keyVDown.post(tap: .cghidEventTap)
         
-        // Increased delay between keydown and keyup for better reliability
-        usleep(100000) // 100ms delay
+        // Minimal delay between keydown and keyup for better speed while maintaining reliability
+        usleep(50000) // 50ms delay
         
         Logger.shared.log("PasteManager: Posting keyup event...")
         keyVUp.post(tap: .cghidEventTap)
         
-        // Add a small delay after posting events
-        Thread.sleep(forTimeInterval: 0.1)
+        // Minimal delay after posting events
+        Thread.sleep(forTimeInterval: 0.05)
         
         Logger.shared.log("PasteManager: Universal direct paste method completed")
         return true

@@ -545,9 +545,8 @@ class ClipboardItemCard: NSView {
         if let targetApp = targetApp, targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             print("Pasting to target app: \(targetApp.localizedName ?? "Unknown")")
             
-            // Use a small delay to ensure the clipboard operation is complete
-            // and the window is closed if needed
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // Reduced delay to make paste operation faster
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 print("Performing universal paste operation")
                 print("isRichText: \(self.item.isRichText), hasMultipleFormats: \(self.item.hasMultipleFormats), isImage: \(self.item.isImage)")
                 
@@ -558,8 +557,8 @@ class ClipboardItemCard: NSView {
                     targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
                 }
                 
-                // Small delay to ensure the app is activated
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // Reduced delay to make paste operation faster
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     // Use the universal paste method that works with any application
                     PasteManager.shared.universalPaste()
                 }
@@ -567,8 +566,8 @@ class ClipboardItemCard: NSView {
         } else {
             print("No valid target application to paste to")
             
-            // If we can't determine a valid target app, just try to paste anyway
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // Reduced delay to make paste operation faster
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 PasteManager.shared.universalPaste()
             }
         }
