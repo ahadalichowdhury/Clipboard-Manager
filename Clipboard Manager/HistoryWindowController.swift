@@ -1329,6 +1329,7 @@ class HistoryWindowController: NSWindowController {
     private var currentlyEditingItemId: UUID? // Track the item being edited
     private var nextItemToFocusAfterDeletion: UUID? // Track the next item to focus on after deletion
     private var currentEditTextView: EditableTextView? // Track the current text view being edited
+    private var keyEventMonitor: Any?
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -1935,8 +1936,14 @@ class HistoryWindowController: NSWindowController {
             self.window?.makeFirstResponder(self.containerView)
         }
         
+        // Remove any existing monitors to prevent duplicates
+        if let existingMonitor = keyEventMonitor {
+            NSEvent.removeMonitor(existingMonitor)
+            keyEventMonitor = nil
+        }
+        
         // Set up local event monitor for keyboard events
-        NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self = self else { return event }
             
             // Handle key events
@@ -2082,6 +2089,9 @@ class HistoryWindowController: NSWindowController {
                 // Show preview alert with the item's content
                 let alert = NSAlert()
                 alert.messageText = "Preview"
+                
+                // Log that space key was pressed for debugging
+                print("Space key pressed - showing preview for item: \(item.id)")
                 
                 if item.isImage {
                     // For images, show dimensions or a placeholder message
@@ -2933,6 +2943,18 @@ class HistoryWindowController: NSWindowController {
             }
         }
     }
+    
+    func windowWillClose(_ notification: Notification) {
+        // Clean up any resources
+        
+        // Remove the event monitor
+        if let keyEventMonitor = keyEventMonitor {
+            NSEvent.removeMonitor(keyEventMonitor)
+            self.keyEventMonitor = nil
+        }
+        
+        // ... existing code ...
+    }
 }
 
 // MARK: - NSTableViewDataSource
@@ -2974,9 +2996,10 @@ extension HistoryWindowController: NSTableViewDelegate {
 // MARK: - NSWindowDelegate
 extension HistoryWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
-        // Ensure the search field doesn't get focus automatically
-        // Set focus to the container view instead
-        // Add a small delay to ensure this happens after all other initialization
+        // No super call needed
+        
+        // Ensure the window's first responder is set to the containerView
+        // This is crucial for keyboard shortcuts like space to work properly
         DispatchQueue.main.async {
             self.window?.makeFirstResponder(self.containerView)
         }
