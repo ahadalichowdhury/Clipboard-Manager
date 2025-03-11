@@ -16,17 +16,24 @@ class PasteManager {
     }
     
     // Main paste method that tries all available strategies
-    func paste(isRichText: Bool = false) {
+    func paste(isRichText: Bool = false, isImage: Bool = false) {
         Logger.shared.log("===== PASTE OPERATION START =====")
-        Logger.shared.log("PasteManager: Starting paste operation" + (isRichText ? " (Rich Text)" : ""))
+        Logger.shared.log("PasteManager: Starting paste operation" + (isRichText ? " (Rich Text)" : "") + (isImage ? " (Image)" : ""))
         
         // Set the rich text flag
-        self.isRichTextPaste = isRichText
-        Logger.shared.log("Set isRichTextPaste to: \(isRichText)")
+        self.isRichTextPaste = isRichText || isImage // Treat images like rich text for pasting
+        Logger.shared.log("Set isRichTextPaste to: \(self.isRichTextPaste)")
         
         // Check clipboard content
         let pasteboard = NSPasteboard.general
         var hasRichTextData = false
+        var hasImageData = false
+        
+        // Check for image data
+        if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            Logger.shared.log("Clipboard contains image data: \(imageData.count) bytes")
+            hasImageData = true
+        }
         
         if let rtfData = pasteboard.data(forType: .rtf) {
             Logger.shared.log("Clipboard contains RTF data: \(rtfData.count) bytes")
@@ -111,6 +118,16 @@ class PasteManager {
                         self.showPasteFailureNotification()
                     }
                     Logger.shared.log("===== PASTE OPERATION FAILED (No Target App) =====")
+                    return
+                }
+            }
+            
+            // If this is an image paste and we have image data, try the special image paste method first
+            if isImage && hasImageData {
+                Logger.shared.log("Detected image paste operation with image data")
+                if self.tryImagePasteMethod() {
+                    Logger.shared.log("PasteManager: Image paste succeeded")
+                    Logger.shared.log("===== PASTE OPERATION COMPLETED (Image Method) =====")
                     return
                 }
             }
@@ -290,6 +307,24 @@ class PasteManager {
         
         // Check clipboard content again right before pasting
         let pasteboard = NSPasteboard.general
+        var hasImageData = false
+        
+        // Check for image data
+        if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            Logger.shared.log("Clipboard contains image data before paste: \(imageData.count) bytes")
+            hasImageData = true
+            
+            // For images, make sure we have a valid NSImage
+            if let image = NSImage(data: imageData) {
+                Logger.shared.log("Valid image found: \(image.size.width)x\(image.size.height)")
+                
+                // Ensure the image is properly set on the clipboard
+                pasteboard.clearContents()
+                let success = pasteboard.writeObjects([image])
+                Logger.shared.log("Re-wrote image to clipboard: \(success)")
+            }
+        }
+        
         if let rtfData = pasteboard.data(forType: .rtf) {
             Logger.shared.log("Clipboard contains RTF data before paste: \(rtfData.count) bytes")
             
@@ -529,6 +564,13 @@ class PasteManager {
         let pasteboard = NSPasteboard.general
         var rtfData: Data? = nil
         var attributedString: NSAttributedString? = nil
+        var hasImageData = false
+        
+        // Check for image data
+        if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            hasImageData = true
+            Logger.shared.log("Clipboard contains image data before rich text paste: \(imageData.count) bytes")
+        }
         
         // First check for RTF data
         if let data = pasteboard.data(forType: .rtf) {
@@ -778,6 +820,164 @@ class PasteManager {
         }
         
         Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
+        return false
+    }
+    
+    // Special method for pasting images
+    private func tryImagePasteMethod() -> Bool {
+        Logger.shared.log("===== IMAGE PASTE METHOD START =====")
+        Logger.shared.log("PasteManager: Trying image paste method")
+        
+        // Check clipboard content again right before pasting
+        let pasteboard = NSPasteboard.general
+        var imageData: Data? = nil
+        var hasImageData = false
+        
+        // Check for image data
+        if let data = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            imageData = data
+            hasImageData = true
+            Logger.shared.log("Clipboard contains image data before image paste: \(data.count) bytes")
+        }
+        
+        // If we couldn't get image data, fail
+        if !hasImageData || imageData == nil {
+            Logger.shared.log("Clipboard does NOT contain image data before image paste")
+            Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        // Ensure the frontmost application is not our app
+        if let frontApp = NSWorkspace.shared.frontmostApplication,
+           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        // Get the frontmost app name for AppleScript
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Could not determine frontmost app")
+            Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Frontmost app for image paste: \(appName)")
+        
+        // Try multiple AppleScript approaches for image pasting
+        let scriptOptions = [
+            // Option 1: Use Edit menu's Paste command
+            """
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.2
+                        click menu item "Paste" of menu "Edit" of menu bar 1
+                        delay 0.2
+                    end tell
+                end tell
+            end tell
+            """,
+            
+            // Option 2: Use Command+V but with longer delays
+            """
+            tell application "\(appName)"
+                activate
+                delay 0.3
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.3
+                        keystroke "v" using command down
+                        delay 0.3
+                    end tell
+                end tell
+            end tell
+            """
+        ]
+        
+        // Try each script option
+        for (index, scriptText) in scriptOptions.enumerated() {
+            Logger.shared.log("PasteManager: Trying image paste AppleScript option \(index + 1)")
+            
+            let script = NSAppleScript(source: scriptText)
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            
+            if let error = error {
+                Logger.shared.log("PasteManager: Image paste AppleScript option \(index + 1) failed: \(error)")
+                // Try the next option
+                Thread.sleep(forTimeInterval: 0.2)
+            } else {
+                Logger.shared.log("PasteManager: Image paste AppleScript option \(index + 1) succeeded")
+                Logger.shared.log("===== IMAGE PASTE METHOD END =====")
+                return true
+            }
+        }
+        
+        // If all options failed, try one more approach with osascript
+        Logger.shared.log("PasteManager: All AppleScript options failed, trying osascript approach")
+        
+        do {
+            // Create a temporary AppleScript file
+            let tempDir = FileManager.default.temporaryDirectory
+            let scriptPath = tempDir.appendingPathComponent("image_paste_script.scpt")
+            
+            let scriptContent = """
+            tell application "\(appName)"
+                activate
+                delay 0.3
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.3
+                        try
+                            click menu item "Paste" of menu "Edit" of menu bar 1
+                        on error
+                            keystroke "v" using command down
+                        end try
+                        delay 0.3
+                    end tell
+                end tell
+            end tell
+            """
+            
+            try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Execute the script using osascript
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = [scriptPath.path]
+            
+            let outputPipe = Pipe()
+            task.standardOutput = outputPipe
+            
+            try task.run()
+            task.waitUntilExit()
+            
+            // Clean up
+            try FileManager.default.removeItem(at: scriptPath)
+            
+            if task.terminationStatus == 0 {
+                Logger.shared.log("PasteManager: osascript approach succeeded")
+                Logger.shared.log("===== IMAGE PASTE METHOD END =====")
+                return true
+            } else {
+                Logger.shared.log("PasteManager: osascript approach failed")
+            }
+        } catch {
+            Logger.shared.log("PasteManager: osascript error: \(error)")
+        }
+        
+        // If all else fails, try direct paste method
+        if tryDirectPasteMethod() {
+            Logger.shared.log("PasteManager: Direct paste method succeeded for image")
+            Logger.shared.log("===== IMAGE PASTE METHOD END =====")
+            return true
+        }
+        
+        Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
         return false
     }
     

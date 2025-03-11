@@ -489,8 +489,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func simulatePasteKeystroke(isRichText: Bool = false) {
-        Logger.shared.log("Simulating paste keystroke" + (isRichText ? " (Rich Text)" : ""))
+    private func simulatePasteKeystroke(isRichText: Bool = false, isImage: Bool = false) {
+        Logger.shared.log("Simulating paste keystroke" + (isRichText ? " (Rich Text)" : "") + (isImage ? " (Image)" : ""))
         
         guard AXIsProcessTrusted() else {
             Logger.shared.log("Cannot simulate paste: accessibility permissions not granted")
@@ -499,8 +499,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
         
-        // Use the centralized PasteManager with rich text information
-        PasteManager.shared.paste(isRichText: isRichText)
+        // Use the centralized PasteManager with rich text and image information
+        PasteManager.shared.paste(isRichText: isRichText, isImage: isImage)
     }
 
     private func checkAccessibilityPermissions() {

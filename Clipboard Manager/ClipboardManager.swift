@@ -570,20 +570,23 @@ class ClipboardManager {
                 // Use a slight delay to ensure the clipboard content is ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     // Pass the rich text flag if this is a rich text item
-                    if item.isRichText {
-                        PasteManager.shared.paste(isRichText: true)
+                    if item.isImage {
+                        print("Image item detected, using image paste method")
+                        PasteManager.shared.paste(isRichText: false, isImage: true)
+                    } else if item.isRichText {
+                        PasteManager.shared.paste(isRichText: true, isImage: false)
                     } else if item.hasMultipleFormats {
                         // Check if we have HTML data which should be treated as rich text
                         let pasteboard = NSPasteboard.general
                         if pasteboard.data(forType: .html) != nil || 
                            pasteboard.data(forType: NSPasteboard.PasteboardType(rawValue: "Apple HTML pasteboard type")) != nil {
                             print("HTML data detected, treating as rich text")
-                            PasteManager.shared.paste(isRichText: true)
+                            PasteManager.shared.paste(isRichText: true, isImage: false)
                         } else {
-                            PasteManager.shared.paste()
+                            PasteManager.shared.paste(isRichText: false, isImage: false)
                         }
                     } else {
-                        PasteManager.shared.paste()
+                        PasteManager.shared.paste(isRichText: false, isImage: false)
                     }
                 }
             }
@@ -915,12 +918,36 @@ class ClipboardManager {
         else if item.isImage, let image = item.getImage() {
             print("Setting image to clipboard")
             
-            // Copy image to clipboard
-            pasteboard.writeObjects([image])
+            // Clear the clipboard first
+            pasteboard.clearContents()
+            
+            // Copy image to clipboard using multiple methods for better compatibility
+            let success1 = pasteboard.writeObjects([image])
+            print("writeObjects result: \(success1)")
+            
+            // Also set the TIFF representation
+            if let tiffData = image.tiffRepresentation {
+                pasteboard.setData(tiffData, forType: .tiff)
+                print("Set TIFF data: \(tiffData.count) bytes")
+                
+                // Also set PNG format for better compatibility
+                if let bitmapRep = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmapRep.representation(using: .png, properties: [:]) {
+                    pasteboard.setData(pngData, forType: .png)
+                    print("Set PNG data: \(pngData.count) bytes")
+                }
+            }
             
             // Update last image data to prevent re-adding
             lastImageData = item.imageData
             print("Updated lastImageData with \(item.imageData?.count ?? 0) bytes")
+            
+            // Verify what was actually set to the clipboard
+            if let verifyData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+                print("Verified image data on clipboard: \(verifyData.count) bytes")
+            } else {
+                print("WARNING: Failed to verify image data on clipboard!")
+            }
         }
         // If it's plain text
         else {

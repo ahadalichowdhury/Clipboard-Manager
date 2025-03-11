@@ -522,8 +522,27 @@ class ClipboardItemCard: NSView {
         // Prevent event propagation
         NSApp.preventWindowOrdering()
         
+        // Log that we're handling a paste action
+        print("Paste button clicked for item: \(item.id), isImage: \(item.isImage)")
+        
         // Perform paste action
         clickAction?(item)
+        
+        // If this is an image, ensure it's handled properly
+        if item.isImage {
+            // Log that we're handling an image paste
+            print("Handling image paste for item: \(item.id)")
+            
+            // Make sure the target application is activated
+            if let targetApp = NSWorkspace.shared.frontmostApplication, 
+               targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
+                // Give the app time to fully activate
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    // Use the PasteManager with isImage set to true for images
+                    PasteManager.shared.paste(isRichText: false, isImage: true)
+                }
+            }
+        }
     }
     
     @objc private func pinButtonClicked(_ sender: NSButton) {
@@ -1817,9 +1836,9 @@ class HistoryWindowController: NSWindowController {
                         // If auto-paste is enabled, simulate paste keystroke
                         if Preferences.shared.autoPaste {
                             print("Auto-paste is enabled, simulating paste keystroke")
-                            print("isRichText: \(item.isRichText), hasMultipleFormats: \(item.hasMultipleFormats)")
+                            print("isRichText: \(item.isRichText), hasMultipleFormats: \(item.hasMultipleFormats), isImage: \(item.isImage)")
                             // Use the PasteManager directly for better control
-                            PasteManager.shared.paste(isRichText: item.isRichText || item.hasMultipleFormats)
+                            PasteManager.shared.paste(isRichText: item.isRichText || item.hasMultipleFormats, isImage: item.isImage)
                         } else {
                             print("Auto-paste is disabled, not simulating paste keystroke")
                         }
