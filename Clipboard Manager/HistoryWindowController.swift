@@ -525,22 +525,51 @@ class ClipboardItemCard: NSView {
         // Log that we're handling a paste action
         print("Paste button clicked for item: \(item.id), isImage: \(item.isImage)")
         
-        // Perform paste action
+        // Get the currently active application (where the cursor is positioned)
+        let targetApp = NSWorkspace.shared.frontmostApplication
+        print("Target application before paste: \(targetApp?.localizedName ?? "Unknown")")
+        
+        // Perform paste action (copy to clipboard)
         clickAction?(item)
         
-        // If this is an image, ensure it's handled properly
-        if item.isImage {
-            // Log that we're handling an image paste
-            print("Handling image paste for item: \(item.id)")
+        // Always close the window immediately after copying
+        // This is important to get out of the way before pasting
+        if let window = self.window {
+            print("Closing window after copying")
+            window.close()
+        } else {
+            print("Cannot close window (window is nil)")
+        }
+        
+        // Check if we have a valid target application
+        if let targetApp = targetApp, targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
+            print("Pasting to target app: \(targetApp.localizedName ?? "Unknown")")
             
-            // Make sure the target application is activated
-            if let targetApp = NSWorkspace.shared.frontmostApplication, 
-               targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
-                // Give the app time to fully activate
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    // Use the PasteManager with isImage set to true for images
-                    PasteManager.shared.paste(isRichText: false, isImage: true)
+            // Use a small delay to ensure the clipboard operation is complete
+            // and the window is closed if needed
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                print("Performing universal paste operation")
+                print("isRichText: \(self.item.isRichText), hasMultipleFormats: \(self.item.hasMultipleFormats), isImage: \(self.item.isImage)")
+                
+                // First, ensure the target app is active
+                if #available(macOS 14.0, *) {
+                    targetApp.activate(options: .activateAllWindows)
+                } else {
+                    targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
                 }
+                
+                // Small delay to ensure the app is activated
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Use the universal paste method that works with any application
+                    PasteManager.shared.universalPaste()
+                }
+            }
+        } else {
+            print("No valid target application to paste to")
+            
+            // If we can't determine a valid target app, just try to paste anyway
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                PasteManager.shared.universalPaste()
             }
         }
     }
@@ -1794,12 +1823,12 @@ class HistoryWindowController: NSWindowController {
             let targetApp = self.targetApplication
             print("Target application: \(targetApp?.localizedName ?? "Unknown")")
             
-            // Close the window first
-            if let window = self.window, Preferences.shared.closeAfterCopy {
-                print("Closing window (closeAfterCopy is enabled)")
+            // Always close the window
+            if let window = self.window {
+                print("Closing window after copying")
                 window.close()
             } else {
-                print("Not closing window (closeAfterCopy is disabled or window is nil)")
+                print("Cannot close window (window is nil)")
             }
             
             // Find the index of the item

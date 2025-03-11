@@ -477,7 +477,6 @@ class PreferencesWindowController: NSWindowController {
     private var maxHistoryItemsSlider: NSSlider!
     
     private var showNotificationsCheckbox: NSButton!
-    private var closeAfterCopyCheckbox: NSButton!
     private var autoPasteCheckbox: NSButton!
     private var launchAtStartupCheckbox: NSButton!
     
@@ -1043,29 +1042,14 @@ class PreferencesWindowController: NSWindowController {
         windowBehaviorSectionLabel.textColor = NSColor.labelColor
         behaviorTab.addSubview(windowBehaviorSectionLabel)
         
-        // Close after copy checkbox
-        closeAfterCopyCheckbox = NSButton(checkboxWithTitle: "Close window after copying", target: self, action: #selector(applyChanges))
-        closeAfterCopyCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 80, width: 250, height: 20)
-        behaviorTab.addSubview(closeAfterCopyCheckbox)
-        
-        // Close after copy explanation
-        let closeAfterCopyExplanation = NSTextField(labelWithString: "Automatically closes the clipboard window after you select an item")
-        closeAfterCopyExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 100, width: 350, height: 16)
-        closeAfterCopyExplanation.font = NSFont.systemFont(ofSize: 10)
-        closeAfterCopyExplanation.textColor = NSColor.secondaryLabelColor
-        closeAfterCopyExplanation.isEditable = false
-        closeAfterCopyExplanation.isBordered = false
-        closeAfterCopyExplanation.drawsBackground = false
-        behaviorTab.addSubview(closeAfterCopyExplanation)
-        
         // Auto paste checkbox
-        autoPasteCheckbox = NSButton(checkboxWithTitle: "Automatically paste after copying", target: self, action: #selector(applyChanges))
-        autoPasteCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 130, width: 250, height: 20)
+        autoPasteCheckbox = NSButton(checkboxWithTitle: "Auto-paste after copying", target: self, action: #selector(applyChanges))
+        autoPasteCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 80, width: 250, height: 20)
         behaviorTab.addSubview(autoPasteCheckbox)
         
         // Auto paste explanation
-        let autoPasteExplanation = NSTextField(labelWithString: "Automatically pastes the selected item after copying (requires accessibility permissions)")
-        autoPasteExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 150, width: 350, height: 16)
+        let autoPasteExplanation = NSTextField(labelWithString: "Automatically pastes the copied item after selection")
+        autoPasteExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 100, width: 350, height: 16)
         autoPasteExplanation.font = NSFont.systemFont(ofSize: 10)
         autoPasteExplanation.textColor = NSColor.secondaryLabelColor
         autoPasteExplanation.isEditable = false
@@ -1141,35 +1125,35 @@ class PreferencesWindowController: NSWindowController {
         behaviorTab.addSubview(hotkeyWarning)
         
         // Section title for Notification settings
-        let notificationSectionLabel = NSTextField(labelWithString: "Notifications")
-        notificationSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 375, width: 200, height: 24)
-        notificationSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
-        notificationSectionLabel.textColor = NSColor.labelColor
-        behaviorTab.addSubview(notificationSectionLabel)
+        let notificationsSectionLabel = NSTextField(labelWithString: "Notifications")
+        notificationsSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 180, width: 200, height: 24)
+        notificationsSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
+        notificationsSectionLabel.textColor = NSColor.labelColor
+        behaviorTab.addSubview(notificationsSectionLabel)
         
         // Show notifications checkbox
         showNotificationsCheckbox = NSButton(checkboxWithTitle: "Show notifications", target: self, action: #selector(applyChanges))
-        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 415, width: 200, height: 20)
+        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 220, width: 200, height: 20)
         behaviorTab.addSubview(showNotificationsCheckbox)
         
-        // Notifications explanation
-        let notificationsExplanation = NSTextField(labelWithString: "Show notifications when items are copied to clipboard")
-        notificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 435, width: 350, height: 16)
-        notificationsExplanation.font = NSFont.systemFont(ofSize: 10)
-        notificationsExplanation.textColor = NSColor.secondaryLabelColor
-        notificationsExplanation.isEditable = false
-        notificationsExplanation.isBordered = false
-        notificationsExplanation.drawsBackground = false
-        behaviorTab.addSubview(notificationsExplanation)
+        // Show notifications explanation
+        let showNotificationsExplanation = NSTextField(labelWithString: "Display notifications when items are copied to clipboard")
+        showNotificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 240, width: 350, height: 16)
+        showNotificationsExplanation.font = NSFont.systemFont(ofSize: 10)
+        showNotificationsExplanation.textColor = NSColor.secondaryLabelColor
+        showNotificationsExplanation.isEditable = false
+        showNotificationsExplanation.isBordered = false
+        showNotificationsExplanation.drawsBackground = false
+        behaviorTab.addSubview(showNotificationsExplanation)
         
         // Launch at startup checkbox
-        launchAtStartupCheckbox = NSButton(checkboxWithTitle: "Launch at startup", target: self, action: #selector(applyChanges))
-        launchAtStartupCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 475, width: 200, height: 20)
+        launchAtStartupCheckbox = NSButton(checkboxWithTitle: "Launch at system startup", target: self, action: #selector(applyChanges))
+        launchAtStartupCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 130, width: 250, height: 20)
         behaviorTab.addSubview(launchAtStartupCheckbox)
         
         // Launch at startup explanation
-        let launchAtStartupExplanation = NSTextField(labelWithString: "Automatically launch Clipboard Manager when you log in to your Mac")
-        launchAtStartupExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 495, width: 350, height: 16)
+        let launchAtStartupExplanation = NSTextField(labelWithString: "Automatically launch Clipboard Manager when you log in")
+        launchAtStartupExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 150, width: 350, height: 16)
         launchAtStartupExplanation.font = NSFont.systemFont(ofSize: 10)
         launchAtStartupExplanation.textColor = NSColor.secondaryLabelColor
         launchAtStartupExplanation.isEditable = false
@@ -1223,7 +1207,6 @@ class PreferencesWindowController: NSWindowController {
               windowHeightSlider != nil &&
               maxHistoryItemsSlider != nil &&
               showNotificationsCheckbox != nil &&
-              closeAfterCopyCheckbox != nil &&
               autoPasteCheckbox != nil &&
               launchAtStartupCheckbox != nil &&
               hotkeyKeyPopup != nil &&
@@ -1306,7 +1289,6 @@ class PreferencesWindowController: NSWindowController {
         
         // Behavior
         showNotificationsCheckbox.state = prefs.showNotifications ? .on : .off
-        closeAfterCopyCheckbox.state = prefs.closeAfterCopy ? .on : .off
         autoPasteCheckbox.state = prefs.autoPaste ? .on : .off
         launchAtStartupCheckbox.state = prefs.launchAtStartup ? .on : .off
         
@@ -1391,7 +1373,6 @@ class PreferencesWindowController: NSWindowController {
         
         // Update behavior preferences
         prefs.showNotifications = showNotificationsCheckbox.state == .on
-        prefs.closeAfterCopy = closeAfterCopyCheckbox.state == .on
         prefs.autoPaste = autoPasteCheckbox.state == .on
         prefs.launchAtStartup = launchAtStartupCheckbox.state == .on
         
@@ -1487,7 +1468,6 @@ class PreferencesWindowController: NSWindowController {
         
         // Behavior
         prefs.showNotifications = showNotificationsCheckbox.state == .on
-        prefs.closeAfterCopy = closeAfterCopyCheckbox.state == .on
         prefs.autoPaste = autoPasteCheckbox.state == .on
         prefs.launchAtStartup = launchAtStartupCheckbox.state == .on
         

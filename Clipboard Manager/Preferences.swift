@@ -20,7 +20,6 @@ class Preferences: Codable {
     
     // Behavior
     var showNotifications: Bool = true
-    var closeAfterCopy: Bool = true
     var autoPaste: Bool = true // Whether to automatically paste after copying
     var launchAtStartup: Bool = true // Whether to launch the app at system startup
     
@@ -140,7 +139,6 @@ class Preferences: Codable {
                 self.windowHeight = loadedPreferences.windowHeight
                 self.maxHistoryItems = loadedPreferences.maxHistoryItems
                 self.showNotifications = loadedPreferences.showNotifications
-                self.closeAfterCopy = loadedPreferences.closeAfterCopy
                 
                 // Handle the new autoPaste property (might not exist in older preference files)
                 if let autoPasteValue = Mirror(reflecting: loadedPreferences).children.first(where: { $0.label == "autoPaste" })?.value as? Bool {

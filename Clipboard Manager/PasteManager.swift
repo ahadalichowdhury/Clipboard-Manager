@@ -96,29 +96,45 @@ class PasteManager {
         
         // Try all paste methods in sequence with proper delays
         DispatchQueue.global(qos: .userInitiated).async {
-            // Make sure we're not trying to paste into Clipboard Manager itself
-            if let frontApp = NSWorkspace.shared.frontmostApplication,
-               frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
-                Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
-                
-                // Try to find the previous active application
-                if let previousApp = NSWorkspace.shared.runningApplications.first(where: { 
-                    $0.isActive == false && 
-                    $0.bundleIdentifier != Bundle.main.bundleIdentifier && 
-                    $0.activationPolicy == .regular 
-                }) {
-                    Logger.shared.log("PasteManager: Activating previous app: \(previousApp.localizedName ?? "Unknown")")
-                    previousApp.activate(options: .activateIgnoringOtherApps)
+            // Make sure the target application is active and not Clipboard Manager itself
+            if let frontApp = NSWorkspace.shared.frontmostApplication {
+                if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+                    Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+                    
+                    // Try to find the previous active application
+                    if let previousApp = NSWorkspace.shared.runningApplications.first(where: { 
+                        $0.isActive == false && 
+                        $0.bundleIdentifier != Bundle.main.bundleIdentifier && 
+                        $0.activationPolicy == .regular 
+                    }) {
+                        Logger.shared.log("PasteManager: Activating previous app: \(previousApp.localizedName ?? "Unknown")")
+                        previousApp.activate(options: .activateIgnoringOtherApps)
+                        
+                        // Give the app time to activate
+                        Thread.sleep(forTimeInterval: 0.3)
+                    } else {
+                        Logger.shared.log("PasteManager: Could not find a suitable target application")
+                        DispatchQueue.main.async {
+                            self.showPasteFailureNotification()
+                        }
+                        Logger.shared.log("===== PASTE OPERATION FAILED (No Target App) =====")
+                        return
+                    }
+                } else {
+                    // Ensure the target application is fully activated
+                    Logger.shared.log("PasteManager: Ensuring target app is activated: \(frontApp.localizedName ?? "Unknown")")
+                    
+                    // Activate the target application with options to bring it to front
+                    if #available(macOS 14.0, *) {
+                        // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+                        frontApp.activate(options: .activateAllWindows)
+                    } else {
+                        // For older macOS versions, use the previous API
+                        frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                    }
                     
                     // Give the app time to activate
-                    Thread.sleep(forTimeInterval: 0.3)
-                } else {
-                    Logger.shared.log("PasteManager: Could not find a suitable target application")
-                    DispatchQueue.main.async {
-                        self.showPasteFailureNotification()
-                    }
-                    Logger.shared.log("===== PASTE OPERATION FAILED (No Target App) =====")
-                    return
+                    Thread.sleep(forTimeInterval: 0.2)
                 }
             }
             
@@ -169,6 +185,113 @@ class PasteManager {
                 self.showPasteFailureNotification()
             }
             Logger.shared.log("===== PASTE OPERATION FAILED (All Methods Failed) =====")
+        }
+    }
+    
+    // Method to paste to a specific target application without changing focus
+    func pasteToApp(targetApp: NSRunningApplication, isRichText: Bool = false, isImage: Bool = false) {
+        Logger.shared.log("===== PASTE TO APP OPERATION START =====")
+        Logger.shared.log("PasteManager: Starting paste to app operation" + (isRichText ? " (Rich Text)" : "") + (isImage ? " (Image)" : ""))
+        Logger.shared.log("Target application: \(targetApp.localizedName ?? "Unknown") (Bundle ID: \(targetApp.bundleIdentifier ?? "unknown"))")
+        
+        // Set the rich text flag
+        self.isRichTextPaste = isRichText || isImage // Treat images like rich text for pasting
+        Logger.shared.log("Set isRichTextPaste to: \(self.isRichTextPaste)")
+        
+        // Check clipboard content
+        let pasteboard = NSPasteboard.general
+        var hasRichTextData = false
+        var hasImageData = false
+        
+        // Check for image data
+        if let imageData = pasteboard.data(forType: .tiff) ?? pasteboard.data(forType: .png) {
+            Logger.shared.log("Clipboard contains image data: \(imageData.count) bytes")
+            hasImageData = true
+        }
+        
+        if let rtfData = pasteboard.data(forType: .rtf) {
+            Logger.shared.log("Clipboard contains RTF data: \(rtfData.count) bytes")
+            hasRichTextData = true
+        }
+        
+        if let stringData = pasteboard.string(forType: .string) {
+            Logger.shared.log("Clipboard contains string data: \(stringData)")
+        } else {
+            Logger.shared.log("Clipboard does NOT contain string data")
+        }
+        
+        // Check for accessibility permissions
+        guard AXIsProcessTrusted() else {
+            Logger.shared.log("PasteManager: Cannot paste - accessibility permissions not granted")
+            // Show a notification to the user
+            showAccessibilityNotification()
+            // Request permissions via AppDelegate
+            NotificationCenter.default.post(name: NSNotification.Name("RequestAccessibilityPermissions"), object: nil)
+            Logger.shared.log("===== PASTE TO APP OPERATION FAILED (No Accessibility Permissions) =====")
+            return
+        }
+        
+        // Log environment information
+        logEnvironmentInfo()
+        
+        // Try all paste methods in sequence with proper delays
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Ensure the frontmost application is not our app
+            if targetApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+                Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+                Logger.shared.log("===== PASTE TO APP OPERATION FAILED (Target is Clipboard Manager) =====")
+                return
+            }
+            
+            // Get the app name for AppleScript
+            guard let appName = targetApp.localizedName else {
+                Logger.shared.log("PasteManager: Cannot determine target app name")
+                Logger.shared.log("===== PASTE TO APP OPERATION FAILED (No App Name) =====")
+                return
+            }
+            
+            // Try AppleScript paste methods first as they're more reliable for targeting specific apps
+            if self.tryAppleScriptPasteToApp(appName: appName, isRichText: isRichText, isImage: isImage) {
+                Logger.shared.log("PasteManager: AppleScript paste to app succeeded")
+                Logger.shared.log("===== PASTE TO APP OPERATION COMPLETED (AppleScript Method) =====")
+                return
+            }
+            
+            // If AppleScript fails, try osascript as a fallback
+            if self.tryOsascriptPasteToApp(appName: appName, isRichText: isRichText, isImage: isImage) {
+                Logger.shared.log("PasteManager: osascript paste to app succeeded")
+                Logger.shared.log("===== PASTE TO APP OPERATION COMPLETED (Osascript Method) =====")
+                return
+            }
+            
+            // If all else fails, try the direct paste method
+            // This requires activating the app, which might disrupt cursor position
+            Logger.shared.log("PasteManager: AppleScript methods failed, falling back to direct paste")
+            
+            // Activate the target application with options to bring it to front
+            if #available(macOS 14.0, *) {
+                // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+                targetApp.activate(options: .activateAllWindows)
+            } else {
+                // For older macOS versions, use the previous API
+                targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            }
+            
+            // Give the app time to activate
+            Thread.sleep(forTimeInterval: 0.2)
+            
+            // Try direct paste method
+            if self.tryDirectPasteMethod() {
+                Logger.shared.log("PasteManager: Direct paste method succeeded")
+                Logger.shared.log("===== PASTE TO APP OPERATION COMPLETED (Direct Method) =====")
+                return
+            }
+            
+            // If all else fails, notify the user
+            DispatchQueue.main.async {
+                self.showPasteFailureNotification()
+            }
+            Logger.shared.log("===== PASTE TO APP OPERATION FAILED (All Methods Failed) =====")
         }
     }
     
@@ -355,17 +478,35 @@ class PasteManager {
         // Log all available types on the clipboard
         Logger.shared.log("All available clipboard types: \(pasteboard.types?.map { $0.rawValue } ?? [])")
         
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
+            Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
+            return false
+        }
+        
         // Ensure the frontmost application is not our app
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
             Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
             Logger.shared.log("===== DIRECT PASTE METHOD FAILED =====")
             return false
         }
         
+        // Ensure the target application is fully activated
+        Logger.shared.log("PasteManager: Ensuring target app is activated: \(frontApp.localizedName ?? "Unknown")")
+        
+        // Activate the target application with options to bring it to front
+        if #available(macOS 14.0, *) {
+            // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+            frontApp.activate(options: .activateAllWindows)
+        } else {
+            // For older macOS versions, use the previous API
+            frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        }
+        
         // Make sure the target application has focus
         // Small delay to ensure the app is ready to receive keyboard events
-        Thread.sleep(forTimeInterval: 0.1)
+        Thread.sleep(forTimeInterval: 0.2)
         
         // Create a source
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
@@ -417,41 +558,69 @@ class PasteManager {
     private func tryAppleScriptPasteMethods() -> Bool {
         Logger.shared.log("PasteManager: Trying AppleScript paste methods")
         
-        // Different AppleScript approaches
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
+            return false
+        }
+        
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Target application for AppleScript paste: \(appName)")
+        
+        // Different AppleScript approaches that specifically target the frontmost app
         let scripts = [
-            // Basic approach
+            // Target specific app with activation
             """
-            tell application "System Events"
-                keystroke "v" using command down
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        keystroke "v" using command down
+                    end tell
+                end tell
             end tell
             """,
             
-            // Target frontmost app
+            // Basic approach with explicit app targeting
             """
             tell application "System Events"
-                set frontApp to first application process whose frontmost is true
-                tell frontApp
+                tell application process "\(appName)"
                     keystroke "v" using command down
                 end tell
             end tell
             """,
             
-            // With delays
+            // Target frontmost app with explicit check
             """
             tell application "System Events"
                 set frontApp to first application process whose frontmost is true
-                tell frontApp
-                    delay 0.1
-                    keystroke "v" using command down
-                    delay 0.1
-                end tell
+                if name of frontApp is "\(appName)" then
+                    tell frontApp
+                        keystroke "v" using command down
+                    end tell
+                end if
             end tell
             """,
             
-            // Alternative syntax
+            // With delays and explicit app targeting
             """
-            tell application "System Events"
-                key code 9 using {command down}
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.1
+                        keystroke "v" using command down
+                        delay 0.1
+                    end tell
+                end tell
             end tell
             """
         ]
@@ -483,30 +652,54 @@ class PasteManager {
     private func tryOsascriptPaste() -> Bool {
         Logger.shared.log("PasteManager: Trying osascript paste method")
         
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
+            return false
+        }
+        
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Target application for osascript paste: \(appName)")
+        
         // Create a temporary AppleScript file
         let tempDir = FileManager.default.temporaryDirectory
         let scriptPath = tempDir.appendingPathComponent("paste_script.scpt")
         
-        // More robust script with multiple approaches
+        // More robust script with multiple approaches and explicit app targeting
         let scriptContent = """
         try
-            tell application "System Events"
-                set frontApp to first application process whose frontmost is true
-                tell frontApp
-                    delay 0.1
-                    keystroke "v" using command down
-                    delay 0.1
+            tell application "\(appName)"
+                activate
+                delay 0.2
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.1
+                        keystroke "v" using command down
+                        delay 0.1
+                    end tell
                 end tell
             end tell
         on error errMsg
             try
                 tell application "System Events"
-                    key code 9 using {command down}
+                    tell application process "\(appName)"
+                        key code 9 using {command down}
+                    end tell
                 end tell
             on error errMsg2
                 try
-                    tell application "System Events"
-                        keystroke "v" using command down
+                    tell application "\(appName)"
+                        activate
+                        delay 0.2
+                        tell application "System Events"
+                            keystroke "v" using command down
+                        end tell
                     end tell
                 on error errMsg3
                     return "All paste methods failed: " & errMsg3
@@ -673,27 +866,41 @@ class PasteManager {
         // Log all available types on the clipboard
         Logger.shared.log("All available clipboard types: \(pasteboard.types?.map { $0.rawValue } ?? [])")
         
-        // Ensure the frontmost application is not our app
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
-            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
             Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
             return false
         }
         
-        // Get the frontmost app name for AppleScript
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let appName = frontApp.localizedName else {
-            Logger.shared.log("PasteManager: Could not determine frontmost app")
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
             Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
             return false
         }
         
         Logger.shared.log("PasteManager: Frontmost app for rich text paste: \(appName)")
         
+        // Ensure the target application is fully activated
+        Logger.shared.log("PasteManager: Ensuring target app is activated: \(appName)")
+        
+        // Activate the target application with options to bring it to front
+        if #available(macOS 14.0, *) {
+            // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+            frontApp.activate(options: .activateAllWindows)
+        } else {
+            // For older macOS versions, use the previous API
+            frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        }
+        
+        // Give the app time to fully activate
+        Thread.sleep(forTimeInterval: 0.2)
+        
         // Try multiple AppleScript approaches for rich text pasting
         let scriptOptions = [
-            // Option 1: Use Edit menu's Paste command
+            // Option 1: Use Edit menu's Paste command with explicit app targeting
             """
             tell application "\(appName)"
                 activate
@@ -708,7 +915,7 @@ class PasteManager {
             end tell
             """,
             
-            // Option 2: Use Command+V but with longer delays
+            // Option 2: Use Command+V but with longer delays and explicit app targeting
             """
             tell application "\(appName)"
                 activate
@@ -723,7 +930,7 @@ class PasteManager {
             end tell
             """,
             
-            // Option 3: Try to paste with formatting explicitly (works in some apps)
+            // Option 3: Try to paste with formatting explicitly with explicit app targeting
             """
             tell application "\(appName)"
                 activate
@@ -819,6 +1026,13 @@ class PasteManager {
             Logger.shared.log("PasteManager: osascript error: \(error)")
         }
         
+        // If all else fails, try direct paste method
+        if tryDirectPasteMethod() {
+            Logger.shared.log("PasteManager: Direct paste method succeeded for rich text")
+            Logger.shared.log("===== RICH TEXT PASTE METHOD END =====")
+            return true
+        }
+        
         Logger.shared.log("===== RICH TEXT PASTE METHOD FAILED =====")
         return false
     }
@@ -847,27 +1061,41 @@ class PasteManager {
             return false
         }
         
-        // Ensure the frontmost application is not our app
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-           frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
-            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
             Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
             return false
         }
         
-        // Get the frontmost app name for AppleScript
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let appName = frontApp.localizedName else {
-            Logger.shared.log("PasteManager: Could not determine frontmost app")
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
             Logger.shared.log("===== IMAGE PASTE METHOD FAILED =====")
             return false
         }
         
         Logger.shared.log("PasteManager: Frontmost app for image paste: \(appName)")
         
+        // Ensure the target application is fully activated
+        Logger.shared.log("PasteManager: Ensuring target app is activated: \(appName)")
+        
+        // Activate the target application with options to bring it to front
+        if #available(macOS 14.0, *) {
+            // In macOS 14+, just use activate() as ignoringOtherApps has no effect
+            frontApp.activate(options: .activateAllWindows)
+        } else {
+            // For older macOS versions, use the previous API
+            frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        }
+        
+        // Give the app time to fully activate
+        Thread.sleep(forTimeInterval: 0.2)
+        
         // Try multiple AppleScript approaches for image pasting
         let scriptOptions = [
-            // Option 1: Use Edit menu's Paste command
+            // Option 1: Use Edit menu's Paste command with explicit app targeting
             """
             tell application "\(appName)"
                 activate
@@ -882,7 +1110,7 @@ class PasteManager {
             end tell
             """,
             
-            // Option 2: Use Command+V but with longer delays
+            // Option 2: Use Command+V but with longer delays and explicit app targeting
             """
             tell application "\(appName)"
                 activate
@@ -1051,5 +1279,484 @@ class PasteManager {
         
         // Default to true for most GUI apps
         return true
+    }
+    
+    // AppleScript paste methods specifically targeting an app
+    private func tryAppleScriptPasteToApp(appName: String, isRichText: Bool = false, isImage: Bool = false) -> Bool {
+        Logger.shared.log("PasteManager: Trying AppleScript paste to app: \(appName)")
+        
+        // Different AppleScript approaches that specifically target the app
+        var scripts = [String]()
+        
+        if isRichText || isImage {
+            // For rich text or images, try menu item paste first
+            scripts.append("""
+            tell application "\(appName)"
+                tell application "System Events"
+                    tell process "\(appName)"
+                        delay 0.1
+                        try
+                            click menu item "Paste" of menu "Edit" of menu bar 1
+                        on error
+                            keystroke "v" using command down
+                        end try
+                        delay 0.1
+                    end tell
+                end tell
+            end tell
+            """)
+            
+            // For rich text, also try paste with formatting
+            if isRichText {
+                scripts.append("""
+                tell application "\(appName)"
+                    tell application "System Events"
+                        tell process "\(appName)"
+                            delay 0.1
+                            try
+                                click menu item "Paste with Formatting" of menu "Edit" of menu bar 1
+                            on error
+                                click menu item "Paste" of menu "Edit" of menu bar 1
+                            end try
+                            delay 0.1
+                        end tell
+                    end tell
+                end tell
+                """)
+            }
+        }
+        
+        // Add standard command+v paste for all types
+        scripts.append("""
+        tell application "\(appName)"
+            tell application "System Events"
+                tell process "\(appName)"
+                    delay 0.1
+                    keystroke "v" using command down
+                    delay 0.1
+                end tell
+            end tell
+        end tell
+        """)
+        
+        // Try each script
+        for (index, scriptText) in scripts.enumerated() {
+            Logger.shared.log("PasteManager: Trying AppleScript paste to app method \(index + 1)")
+            
+            let script = NSAppleScript(source: scriptText)
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            
+            if let error = error {
+                Logger.shared.log("PasteManager: AppleScript paste to app method \(index + 1) failed: \(error)")
+            } else {
+                Logger.shared.log("PasteManager: AppleScript paste to app method \(index + 1) succeeded")
+                return true
+            }
+            
+            // Small delay between attempts
+            usleep(100000) // 100ms
+        }
+        
+        Logger.shared.log("PasteManager: All AppleScript paste to app methods failed")
+        return false
+    }
+    
+    // Shell script paste method using osascript targeting a specific app
+    private func tryOsascriptPasteToApp(appName: String, isRichText: Bool = false, isImage: Bool = false) -> Bool {
+        Logger.shared.log("PasteManager: Trying osascript paste to app: \(appName)")
+        
+        // Create a temporary AppleScript file
+        let tempDir = FileManager.default.temporaryDirectory
+        let scriptPath = tempDir.appendingPathComponent("paste_to_app_script.scpt")
+        
+        // More robust script with multiple approaches
+        let scriptContent: String
+        
+        if isRichText {
+            scriptContent = """
+            try
+                tell application "\(appName)"
+                    tell application "System Events"
+                        tell process "\(appName)"
+                            delay 0.1
+                            try
+                                click menu item "Paste with Formatting" of menu "Edit" of menu bar 1
+                            on error
+                                try
+                                    click menu item "Paste" of menu "Edit" of menu bar 1
+                                on error
+                                    keystroke "v" using command down
+                                end try
+                            end try
+                            delay 0.1
+                        end tell
+                    end tell
+                end tell
+            on error errMsg
+                try
+                    tell application "\(appName)"
+                        tell application "System Events"
+                            tell process "\(appName)"
+                                delay 0.1
+                                keystroke "v" using command down
+                                delay 0.1
+                            end tell
+                        end tell
+                    end tell
+                on error errMsg2
+                    return "All paste methods failed: " & errMsg2
+                end try
+            end try
+            return "Paste completed successfully"
+            """
+        } else if isImage {
+            scriptContent = """
+            try
+                tell application "\(appName)"
+                    tell application "System Events"
+                        tell process "\(appName)"
+                            delay 0.1
+                            try
+                                click menu item "Paste" of menu "Edit" of menu bar 1
+                            on error
+                                keystroke "v" using command down
+                            end try
+                            delay 0.1
+                        end tell
+                    end tell
+                end tell
+            on error errMsg
+                try
+                    tell application "\(appName)"
+                        tell application "System Events"
+                            tell process "\(appName)"
+                                delay 0.1
+                                keystroke "v" using command down
+                                delay 0.1
+                            end tell
+                        end tell
+                    end tell
+                on error errMsg2
+                    return "All paste methods failed: " & errMsg2
+                end try
+            end try
+            return "Paste completed successfully"
+            """
+        } else {
+            // Plain text - simpler script
+            scriptContent = """
+            try
+                tell application "\(appName)"
+                    tell application "System Events"
+                        tell process "\(appName)"
+                            delay 0.1
+                            keystroke "v" using command down
+                            delay 0.1
+                        end tell
+                    end tell
+                end tell
+            on error errMsg
+                return "Paste failed: " & errMsg
+            end try
+            return "Paste completed successfully"
+            """
+        }
+        
+        do {
+            try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Execute the script using osascript
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = [scriptPath.path]
+            
+            let outputPipe = Pipe()
+            task.standardOutput = outputPipe
+            let errorPipe = Pipe()
+            task.standardError = errorPipe
+            
+            try task.run()
+            task.waitUntilExit()
+            
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            if let output = String(data: outputData, encoding: .utf8), !output.isEmpty {
+                Logger.shared.log("PasteManager: osascript output: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+            }
+            
+            if let error = String(data: errorData, encoding: .utf8), !error.isEmpty {
+                Logger.shared.log("PasteManager: osascript error: \(error.trimmingCharacters(in: .whitespacesAndNewlines))")
+                // Clean up
+                try? FileManager.default.removeItem(at: scriptPath)
+                return false
+            }
+            
+            // Clean up
+            try FileManager.default.removeItem(at: scriptPath)
+            return task.terminationStatus == 0
+        } catch {
+            Logger.shared.log("PasteManager: osascript paste to app failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    // Universal paste method that works with any application
+    func universalPaste() {
+        Logger.shared.log("===== UNIVERSAL PASTE OPERATION START =====")
+        Logger.shared.log("PasteManager: Starting universal paste operation")
+        
+        // Check for accessibility permissions
+        guard AXIsProcessTrusted() else {
+            Logger.shared.log("PasteManager: Cannot paste - accessibility permissions not granted")
+            // Show a notification to the user
+            showAccessibilityNotification()
+            // Request permissions via AppDelegate
+            NotificationCenter.default.post(name: NSNotification.Name("RequestAccessibilityPermissions"), object: nil)
+            Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED (No Accessibility Permissions) =====")
+            return
+        }
+        
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
+            Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED =====")
+            return
+        }
+        
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            
+            // Try to find another application to paste to
+            if let previousApp = NSWorkspace.shared.runningApplications.first(where: { 
+                $0.isActive == false && 
+                $0.bundleIdentifier != Bundle.main.bundleIdentifier && 
+                $0.activationPolicy == .regular 
+            }) {
+                Logger.shared.log("PasteManager: Activating previous app: \(previousApp.localizedName ?? "Unknown")")
+                previousApp.activate(options: .activateIgnoringOtherApps)
+                
+                // Give the app time to activate
+                Thread.sleep(forTimeInterval: 0.2)
+                
+                // Try the universal paste on this app
+                universalPasteToFrontmostApp()
+                return
+            } else {
+                Logger.shared.log("PasteManager: Could not find a suitable target application")
+                DispatchQueue.main.async {
+                    self.showPasteFailureNotification()
+                }
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED (No Target App) =====")
+                return
+            }
+        }
+        
+        // Perform the universal paste to the frontmost app
+        universalPasteToFrontmostApp()
+    }
+    
+    // Helper method to perform a universal paste to the frontmost application
+    private func universalPasteToFrontmostApp() {
+        // Try multiple paste methods in sequence
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 1. Try direct paste with Command+V first (most universal)
+            if self.tryUniversalDirectPaste() {
+                Logger.shared.log("PasteManager: Universal direct paste succeeded")
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (Direct Method) =====")
+                return
+            }
+            
+            // 2. Try AppleScript methods
+            Thread.sleep(forTimeInterval: 0.2)
+            if self.tryUniversalAppleScriptPaste() {
+                Logger.shared.log("PasteManager: Universal AppleScript paste succeeded")
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (AppleScript Method) =====")
+                return
+            }
+            
+            // 3. Try osascript as a last resort
+            Thread.sleep(forTimeInterval: 0.2)
+            if self.tryUniversalOsascriptPaste() {
+                Logger.shared.log("PasteManager: Universal osascript paste succeeded")
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (Osascript Method) =====")
+                return
+            }
+            
+            // 4. If all else fails, notify the user
+            DispatchQueue.main.async {
+                self.showPasteFailureNotification()
+            }
+            Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED (All Methods Failed) =====")
+        }
+    }
+    
+    // Direct universal paste method using CGEvent
+    private func tryUniversalDirectPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying universal direct paste method")
+        
+        // Create a source
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            Logger.shared.log("PasteManager: Failed to create event source")
+            return false
+        }
+        
+        // Create key down event for Command+V
+        guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) else {
+            Logger.shared.log("PasteManager: Failed to create keydown event")
+            return false
+        }
+        keyVDown.flags = .maskCommand
+        
+        // Create key up event for Command+V
+        guard let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+            Logger.shared.log("PasteManager: Failed to create keyup event")
+            return false
+        }
+        keyVUp.flags = .maskCommand
+        
+        // Post the events with proper delays
+        Logger.shared.log("PasteManager: Posting keydown event...")
+        keyVDown.post(tap: .cghidEventTap)
+        
+        // Increased delay between keydown and keyup for better reliability
+        usleep(100000) // 100ms delay
+        
+        Logger.shared.log("PasteManager: Posting keyup event...")
+        keyVUp.post(tap: .cghidEventTap)
+        
+        // Add a small delay after posting events
+        Thread.sleep(forTimeInterval: 0.1)
+        
+        Logger.shared.log("PasteManager: Universal direct paste method completed")
+        return true
+    }
+    
+    // Universal AppleScript paste method
+    private func tryUniversalAppleScriptPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying universal AppleScript paste method")
+        
+        // Get the frontmost app name for AppleScript
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let appName = frontApp.localizedName else {
+            Logger.shared.log("PasteManager: Could not determine frontmost app")
+            return false
+        }
+        
+        // Different AppleScript approaches
+        let scripts = [
+            // Target specific app with activation
+            """
+            tell application "System Events"
+                tell process "\(appName)"
+                    keystroke "v" using command down
+                end tell
+            end tell
+            """,
+            
+            // Target frontmost app
+            """
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                tell frontApp
+                    keystroke "v" using command down
+                end tell
+            end tell
+            """,
+            
+            // With delays
+            """
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                tell frontApp
+                    delay 0.1
+                    keystroke "v" using command down
+                    delay 0.1
+                end tell
+            end tell
+            """,
+            
+            // Alternative syntax
+            """
+            tell application "System Events"
+                key code 9 using {command down}
+            end tell
+            """
+        ]
+        
+        // Try each script
+        for (index, scriptText) in scripts.enumerated() {
+            Logger.shared.log("PasteManager: Trying universal AppleScript method \(index + 1)")
+            
+            let script = NSAppleScript(source: scriptText)
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            
+            if let error = error {
+                Logger.shared.log("PasteManager: Universal AppleScript method \(index + 1) failed: \(error)")
+            } else {
+                Logger.shared.log("PasteManager: Universal AppleScript method \(index + 1) succeeded")
+                return true
+            }
+            
+            // Small delay between attempts
+            usleep(100000) // 100ms
+        }
+        
+        Logger.shared.log("PasteManager: All universal AppleScript paste methods failed")
+        return false
+    }
+    
+    // Universal osascript paste method
+    private func tryUniversalOsascriptPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying universal osascript paste method")
+        
+        // Create a temporary AppleScript file
+        let tempDir = FileManager.default.temporaryDirectory
+        let scriptPath = tempDir.appendingPathComponent("universal_paste_script.scpt")
+        
+        // Simple script that just does Cmd+V
+        let scriptContent = """
+        tell application "System Events"
+            keystroke "v" using command down
+        end tell
+        """
+        
+        do {
+            try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Execute the script using osascript
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = [scriptPath.path]
+            
+            let outputPipe = Pipe()
+            task.standardOutput = outputPipe
+            let errorPipe = Pipe()
+            task.standardError = errorPipe
+            
+            try task.run()
+            task.waitUntilExit()
+            
+            // Clean up
+            try FileManager.default.removeItem(at: scriptPath)
+            
+            if task.terminationStatus == 0 {
+                Logger.shared.log("PasteManager: Universal osascript approach succeeded")
+                return true
+            } else {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                if let error = String(data: errorData, encoding: .utf8), !error.isEmpty {
+                    Logger.shared.log("PasteManager: Universal osascript error: \(error.trimmingCharacters(in: .whitespacesAndNewlines))")
+                }
+                Logger.shared.log("PasteManager: Universal osascript approach failed")
+                return false
+            }
+        } catch {
+            Logger.shared.log("PasteManager: Universal osascript error: \(error)")
+            return false
+        }
     }
 } 
