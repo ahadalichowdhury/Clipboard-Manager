@@ -2255,22 +2255,23 @@ class HistoryWindowController: NSWindowController {
                                 documentAttributes: nil
                             )
                             
-                            // Create a mutable copy to modify text color if needed
+                            // Create a mutable copy to ensure we can modify attributes if needed
                             let mutableString = NSMutableAttributedString(attributedString: attributedString)
                             
                             // Check if the text has any color attributes
                             let fullRange = NSRange(location: 0, length: mutableString.length)
                             var hasColorAttribute = false
-                            mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, _, stop in
+                            mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
                                 if value != nil {
                                     hasColorAttribute = true
-                                    stop.pointee = true
                                 }
                             }
                             
-                            // If no explicit color is set, apply system color
+                            // If no explicit color is set, apply the current text color
                             if !hasColorAttribute {
-                                let textColor = isDark ? NSColor.white : NSColor.black
+                                print("No color attribute found, applying explicit text color")
+                                // Use white color to ensure visibility in RTF documents
+                                let textColor = NSColor.white
                                 mutableString.addAttribute(.foregroundColor, value: textColor, range: fullRange)
                             }
                             
@@ -2741,15 +2742,35 @@ class HistoryWindowController: NSWindowController {
                 // Get the attributed string from the text view
                 let attributedString = textView.attributedString()
                 
+                // Create a mutable copy to ensure we can modify attributes if needed
+                let mutableString = NSMutableAttributedString(attributedString: attributedString)
+                
+                // Check if the text has any color attributes
+                let fullRange = NSRange(location: 0, length: mutableString.length)
+                var hasColorAttribute = false
+                mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                    if value != nil {
+                        hasColorAttribute = true
+                    }
+                }
+                
+                // If no explicit color is set, apply the current text color
+                if !hasColorAttribute {
+                    print("No color attribute found, applying explicit text color")
+                    // Use white color to ensure visibility in RTF documents
+                    let textColor = NSColor.white
+                    mutableString.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                }
+                
                 // Convert to plain text for the content field
-                updatedContent = attributedString.string
+                updatedContent = mutableString.string
                 print("Updated content from rich text: \(updatedContent)")
                 
                 // Convert to RTF data for storage
                 do {
                     // Use RTF document type to preserve all formatting
-                    updatedRichTextData = try attributedString.data(
-                        from: NSRange(location: 0, length: attributedString.length),
+                    updatedRichTextData = try mutableString.data(
+                        from: NSRange(location: 0, length: mutableString.length),
                         documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
                     )
                     print("Created rich text data from edited content")

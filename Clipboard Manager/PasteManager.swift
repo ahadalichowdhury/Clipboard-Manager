@@ -796,6 +796,27 @@ class PasteManager {
                 )
                 Logger.shared.log("HTML content as plain text: \(attributedString!.string)")
                 
+                // Create a mutable copy to ensure we can modify attributes if needed
+                let mutableAttributedString = NSMutableAttributedString(attributedString: attributedString!)
+                
+                // Check if the text has any color attributes
+                let fullRange = NSRange(location: 0, length: mutableAttributedString.length)
+                var hasColorAttribute = false
+                mutableAttributedString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                    if value != nil {
+                        hasColorAttribute = true
+                    }
+                }
+                
+                // If no explicit color is set, apply white color to ensure visibility in RTF documents
+                if !hasColorAttribute {
+                    Logger.shared.log("No color attribute found in HTML, applying explicit white color for RTF compatibility")
+                    mutableAttributedString.addAttribute(.foregroundColor, value: NSColor.white, range: fullRange)
+                }
+                
+                // Update the attributed string reference
+                attributedString = mutableAttributedString
+                
                 // Convert to RTF data
                 rtfData = try attributedString!.data(
                     from: NSRange(location: 0, length: attributedString!.length),
@@ -817,6 +838,21 @@ class PasteManager {
         // Create a new attributed string with the same attributes to ensure formatting is preserved
         Logger.shared.log("Creating fresh attributed string to ensure formatting is preserved")
         let newAttributedString = NSMutableAttributedString(attributedString: attributedString!)
+        
+        // Check if the text has any color attributes
+        let fullRange = NSRange(location: 0, length: newAttributedString.length)
+        var hasColorAttribute = false
+        newAttributedString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+            if value != nil {
+                hasColorAttribute = true
+            }
+        }
+        
+        // If no explicit color is set, apply white color to ensure visibility in RTF documents
+        if !hasColorAttribute {
+            Logger.shared.log("No color attribute found in final attributed string, applying explicit white color for RTF compatibility")
+            newAttributedString.addAttribute(.foregroundColor, value: NSColor.white, range: fullRange)
+        }
         
         // Clear the pasteboard and set the attributed string directly
         pasteboard.clearContents()

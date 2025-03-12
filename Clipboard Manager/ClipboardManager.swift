@@ -687,8 +687,23 @@ class ClipboardManager {
                 let mutableString = NSMutableAttributedString(attributedString: attributedString)
                 print("Created mutable copy of attributed string")
                 
+                // Check if the text has any color attributes
+                let fullRange = NSRange(location: 0, length: mutableString.length)
+                var hasColorAttribute = false
+                mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                    if value != nil {
+                        hasColorAttribute = true
+                    }
+                }
+                
+                // If no explicit color is set, apply white color to ensure visibility in RTF documents
+                if !hasColorAttribute {
+                    print("No color attribute found, applying explicit white color for RTF compatibility")
+                    mutableString.addAttribute(.foregroundColor, value: NSColor.white, range: fullRange)
+                }
+                
                 // Get the plain text directly from the attributed string - this ensures it matches the RTF content
-                let plainText = attributedString.string
+                let plainText = mutableString.string
                 print("Extracted plain text from attributed string: \(plainText)")
                 
                 // Update the item's content to match the attributed string
@@ -835,15 +850,33 @@ class ClipboardManager {
                     )
                     print("Created attributed string from HTML data: \(attributedString.string)")
                     
+                    // Create a mutable copy to ensure we can modify attributes if needed
+                    let mutableString = NSMutableAttributedString(attributedString: attributedString)
+                    
+                    // Check if the text has any color attributes
+                    let fullRange = NSRange(location: 0, length: mutableString.length)
+                    var hasColorAttribute = false
+                    mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+                        if value != nil {
+                            hasColorAttribute = true
+                        }
+                    }
+                    
+                    // If no explicit color is set, apply white color to ensure visibility in RTF documents
+                    if !hasColorAttribute {
+                        print("No color attribute found in HTML, applying explicit white color for RTF compatibility")
+                        mutableString.addAttribute(.foregroundColor, value: NSColor.white, range: fullRange)
+                    }
+                    
                     // Create RTF data from the attributed string
-                    let rtfData = try attributedString.data(
-                        from: NSRange(location: 0, length: attributedString.length),
+                    let rtfData = try mutableString.data(
+                        from: NSRange(location: 0, length: mutableString.length),
                         documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
                     )
                     print("Created RTF data from HTML: \(rtfData.count) bytes")
                     
                     // Use writeObjects for better compatibility
-                    let success = pasteboard.writeObjects([attributedString])
+                    let success = pasteboard.writeObjects([mutableString])
                     print("Writing attributed string to pasteboard: \(success)")
                     
                     // Set RTF data for all common RTF formats

@@ -1126,19 +1126,19 @@ class PreferencesWindowController: NSWindowController {
         
         // Section title for Notification settings
         let notificationsSectionLabel = NSTextField(labelWithString: "Notifications")
-        notificationsSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 180, width: 200, height: 24)
+        notificationsSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 365, width: 200, height: 24)
         notificationsSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
         notificationsSectionLabel.textColor = NSColor.labelColor
         behaviorTab.addSubview(notificationsSectionLabel)
         
         // Show notifications checkbox
         showNotificationsCheckbox = NSButton(checkboxWithTitle: "Show notifications", target: self, action: #selector(applyChanges))
-        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 220, width: 200, height: 20)
+        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 395, width: 200, height: 20)
         behaviorTab.addSubview(showNotificationsCheckbox)
         
         // Show notifications explanation
         let showNotificationsExplanation = NSTextField(labelWithString: "Display notifications when items are copied to clipboard")
-        showNotificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 240, width: 350, height: 16)
+        showNotificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 415, width: 350, height: 16)
         showNotificationsExplanation.font = NSFont.systemFont(ofSize: 10)
         showNotificationsExplanation.textColor = NSColor.secondaryLabelColor
         showNotificationsExplanation.isEditable = false
