@@ -1161,11 +1161,18 @@ class ClipboardItemCard: NSView {
 
 // Simple EditableTextView class for rich text editing
 class EditableTextView: NSTextView {
+    // Add properties for smooth scrolling
+    private var isScrolling = false
+    private var scrollTimer: Timer?
+    private var targetScrollPosition: CGPoint?
+    private var scrollAnimationDuration: TimeInterval = 0.3
+    
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
         super.init(frame: frameRect, textContainer: container)
         setupTextColor()
         setupAppearanceObserver()
         setupTextContainer()
+        setupScrollingBehavior()
     }
     
     required init?(coder: NSCoder) {
@@ -1173,10 +1180,12 @@ class EditableTextView: NSTextView {
         setupTextColor()
         setupAppearanceObserver()
         setupTextContainer()
+        setupScrollingBehavior()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        scrollTimer?.invalidate()
     }
     
     private func setupAppearanceObserver() {
@@ -1199,6 +1208,112 @@ class EditableTextView: NSTextView {
     
     @objc private func effectiveAppearanceDidChange() {
         updateTextColorForEntireText()
+    }
+    
+    // Add method to set up smooth scrolling behavior
+    private func setupScrollingBehavior() {
+        // Enable smooth scrolling
+        enclosingScrollView?.scrollsDynamically = true
+        
+        // Set scroll elasticity
+        enclosingScrollView?.hasVerticalScroller = true
+        enclosingScrollView?.hasHorizontalScroller = false
+        enclosingScrollView?.autohidesScrollers = true
+        
+        // Set scroll view appearance
+        enclosingScrollView?.scrollerStyle = .overlay
+        enclosingScrollView?.scrollerKnobStyle = .light
+        
+        // Enable responsive scrolling
+        enclosingScrollView?.usesPredominantAxisScrolling = true
+        
+        // Set content insets for better appearance
+        textContainerInset = NSSize(width: 8, height: 8)
+    }
+    
+    // Override scrollWheel to implement smooth scrolling
+    override func scrollWheel(with event: NSEvent) {
+        guard let scrollView = enclosingScrollView else {
+            super.scrollWheel(with: event)
+            return
+        }
+        
+        // For trackpad scrolling (with phase info), use the default behavior
+        if event.phase != [] || event.momentumPhase != [] {
+            super.scrollWheel(with: event)
+            return
+        }
+        
+        // For mouse wheel scrolling, implement smooth scrolling
+        let deltaY = event.scrollingDeltaY
+        
+        // Calculate target scroll position
+        let currentOffset = scrollView.contentView.bounds.origin
+        let targetY = max(0, currentOffset.y + deltaY)
+        let maxY = max(0, scrollView.documentView!.frame.height - scrollView.contentView.bounds.height)
+        let clampedTargetY = min(targetY, maxY)
+        
+        // Set target position
+        targetScrollPosition = CGPoint(x: currentOffset.x, y: clampedTargetY)
+        
+        // If not already scrolling, start the animation
+        if !isScrolling {
+            isScrolling = true
+            
+            // Invalidate existing timer if any
+            scrollTimer?.invalidate()
+            
+            // Create a new timer for smooth animation
+            scrollTimer = Timer.scheduledTimer(timeInterval: 1/60, target: self, selector: #selector(updateScroll), userInfo: nil, repeats: true)
+            
+            // Add the timer to the current run loop
+            RunLoop.current.add(scrollTimer!, forMode: .common)
+        }
+        
+        // We can't modify the event's phase, so we'll just handle it ourselves
+        // and not call super.scrollWheel to prevent default scrolling
+    }
+    
+    // Method to update scroll position during animation
+    @objc private func updateScroll() {
+        guard let scrollView = enclosingScrollView,
+              let targetPosition = targetScrollPosition else {
+            isScrolling = false
+            scrollTimer?.invalidate()
+            return
+        }
+        
+        // Get current position
+        let currentPosition = scrollView.contentView.bounds.origin
+        
+        // Calculate step size (easing function)
+        let step = CGPoint(
+            x: (targetPosition.x - currentPosition.x) * 0.3,
+            y: (targetPosition.y - currentPosition.y) * 0.3
+        )
+        
+        // Check if we're close enough to target
+        if abs(step.y) < 0.5 {
+            // We've reached the target (or close enough)
+            scrollView.contentView.scroll(to: targetPosition)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            
+            // Clean up
+            isScrolling = false
+            targetScrollPosition = nil
+            scrollTimer?.invalidate()
+            return
+        }
+        
+        // Update position
+        let newPosition = CGPoint(
+            x: currentPosition.x + step.x,
+            y: currentPosition.y + step.y
+        )
+        
+        // Apply scroll
+        scrollView.contentView.scroll(to: newPosition)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
     
     private func setupTextColor() {
@@ -2108,6 +2223,11 @@ class HistoryWindowController: NSWindowController {
                     scrollView.autohidesScrollers = true
                     scrollView.borderType = .bezelBorder
                     
+                    // Enable smooth scrolling
+                    scrollView.scrollsDynamically = true
+                    scrollView.usesPredominantAxisScrolling = true
+                    scrollView.scrollerStyle = .overlay
+                    
                     // Create a text view for the content
                     let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 390, height: 200))
                     textView.isEditable = false
@@ -2119,9 +2239,12 @@ class HistoryWindowController: NSWindowController {
                     textView.isVerticallyResizable = true
                     textView.autoresizingMask = [.width]
                     
+                    // Add padding around text
+                    textView.textContainerInset = NSSize(width: 10, height: 10)
+                    
                     // Set background color based on appearance
                     let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    textView.backgroundColor = isDark ? NSColor(white: 0.2, alpha: 1.0) : NSColor.white
+                    textView.backgroundColor = isDark ? NSColor(white: 0.15, alpha: 1.0) : NSColor(white: 0.98, alpha: 1.0)
                     
                     if item.isRichText, let richTextData = item.richTextData {
                         // Handle rich text content
@@ -2171,9 +2294,6 @@ class HistoryWindowController: NSWindowController {
                     }
                     
                     scrollView.documentView = textView
-                    scrollView.hasVerticalScroller = true
-                    scrollView.hasHorizontalScroller = false
-                    scrollView.autohidesScrollers = true
                     
                     // Make sure the text view fills the scroll view
                     textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: scrollView.contentSize.height)
@@ -2443,6 +2563,15 @@ class HistoryWindowController: NSWindowController {
             scrollView.autohidesScrollers = true
             scrollView.borderType = .bezelBorder
             
+            // Enable smooth scrolling
+            scrollView.scrollsDynamically = true
+            scrollView.usesPredominantAxisScrolling = true
+            scrollView.scrollerStyle = .overlay
+            
+            // Add a subtle background color
+            let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            scrollView.backgroundColor = isDarkMode ? NSColor(white: 0.15, alpha: 1.0) : NSColor(white: 0.98, alpha: 1.0)
+            
             // Use a text view for better multiline editing
             let textContainer = NSTextContainer(containerSize: NSSize(width: scrollView.frame.width, height: CGFloat.greatestFiniteMagnitude))
             let layoutManager = NSLayoutManager()
@@ -2462,6 +2591,9 @@ class HistoryWindowController: NSWindowController {
             textView.isRichText = true  // Always enable rich text editing
             textView.allowsUndo = true
             textView.font = NSFont.systemFont(ofSize: 14)
+            
+            // Add padding around text
+            textView.textContainerInset = NSSize(width: 10, height: 10)
             
             // These settings are now handled when setting up the scroll view
             // textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
