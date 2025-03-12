@@ -3,6 +3,7 @@ import Carbon
 import HotKey
 import UserNotifications
 import ApplicationServices
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
@@ -18,6 +19,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if isDebugMode {
             Logger.shared.log("AppDelegate: Running in DEBUG mode")
         }
+        
+        // Ensure we're using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
+        
+        // Apply appearance settings based on preferences
+        applyAppearanceSettings()
         
         // Set up notification center delegate - safely handle this to prevent crashes
         do {
@@ -41,6 +48,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // Start monitoring clipboard
         clipboardManager.startMonitoring()
+        
+        // Update login item status based on preferences
+        updateLoginItemStatus()
         
         // Show a welcome message
         showWelcomeMessage()
@@ -184,10 +194,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "OK")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         alert.runModal()
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func statusBarButtonClicked() {
@@ -212,6 +225,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     @objc private func showHistory() {
+        // Get the clipboard history
         let items = getClipboardHistory()
         
         if items.isEmpty {
@@ -222,22 +236,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             alert.addButton(withTitle: "OK")
             
             // Ensure alert appears on top of other applications
-            NSApp.activate(ignoringOtherApps: true)
+            safelyActivateApp()
             alert.window.level = .floating
             
             alert.runModal()
+            
+            // Ensure we're still using accessory activation policy
+            NSApp.setActivationPolicy(.accessory)
             return
         }
         
-        // Create and configure the popup window
+        // Create and show the history window
         historyWindow = HistoryWindowController(items: items)
-        historyWindow?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
         
-        // Ensure window is visible and on top
+        // Apply appearance settings to the history window based on preferences
+        if let window = historyWindow?.window {
+            let prefs = Preferences.shared
+            if prefs.useSystemAppearance {
+                window.appearance = nil // Use system appearance
+            } else if prefs.darkMode {
+                window.appearance = NSAppearance(named: .darkAqua)
+            } else {
+                window.appearance = NSAppearance(named: .aqua)
+            }
+        }
+        
+        historyWindow?.showWindow(nil)
+        safelyActivateApp()
+        
+        // Ensure the window is visible and can receive keyboard events
         if let window = historyWindow?.window {
             window.orderFrontRegardless()
+            window.makeKey()
+            
+            // Activate the app to ensure keyboard events are captured
+            NSApp.activate(ignoringOtherApps: true)
         }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func clearHistory() {
@@ -250,13 +287,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "Cancel")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         if alert.runModal() == .alertFirstButtonReturn {
             // User confirmed, clear history
             NotificationCenter.default.post(name: NSNotification.Name("ClearClipboardHistory"), object: nil)
         }
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func showAbout() {
@@ -270,10 +310,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         alert.addButton(withTitle: "OK")
         
         // Ensure alert appears on top of other applications
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         alert.window.level = .floating
         
         alert.runModal()
+        
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func quitApp() {
@@ -285,10 +328,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if let window = historyWindow, window.window?.isVisible == true {
             // Instead of creating a new window, just update the items in the existing window
             window.updateItems(getClipboardHistory())
+            
+            // Apply appearance settings to the history window based on preferences
+            if let historyWindowObj = window.window {
+                let prefs = Preferences.shared
+                if prefs.useSystemAppearance {
+                    historyWindowObj.appearance = nil // Use system appearance
+                } else if prefs.darkMode {
+                    historyWindowObj.appearance = NSAppearance(named: .darkAqua)
+                } else {
+                    historyWindowObj.appearance = NSAppearance(named: .aqua)
+                }
+            }
         }
         
         // Update hotkey if needed
-        updateHotKey()
+        registerHotKey()
+        
+        // Update login item status
+        updateLoginItemStatus()
+        
+        // Apply appearance settings
+        applyAppearanceSettings()
+    }
+    
+    private func applyAppearanceSettings() {
+        // Set the app's appearance to always follow system appearance
+        NSApp.appearance = nil // Use system appearance
+        
+        // Apply the same system appearance to all windows except the clipboard history window
+        for window in NSApp.windows {
+            // Skip the clipboard history window - it will be handled separately
+            if window != historyWindow?.window {
+                window.appearance = nil // Always use system appearance
+            }
+        }
     }
     
     private func updateHotKey() {
@@ -321,7 +395,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         preferencesWindow?.showWindow(nil)
         
         // Force the app to be active and bring window to front
-        NSApp.activate(ignoringOtherApps: true)
+        safelyActivateApp()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless() // Add this to force window to front
         
@@ -331,9 +405,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 if !window.isVisible {
                     print("Window still not visible, forcing again")
                     window.orderFrontRegardless()
-                    NSApp.activate(ignoringOtherApps: true)
+                    self.safelyActivateApp()
                 }
             }
+            
+            // Ensure we're still using accessory activation policy
+            NSApp.setActivationPolicy(.accessory)
         }
         
         print("Preferences window created and should be visible: \(window), isVisible: \(window.isVisible)")
@@ -349,26 +426,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Tell the clipboard manager to ignore the next clipboard change
         NotificationCenter.default.post(name: NSNotification.Name("IgnoreNextClipboardChange"), object: nil)
         
-        // Copy to clipboard
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(item.content, forType: .string)
+        // Use the ClipboardManager to copy the item to clipboard
+        clipboardManager.copyItemToClipboard(item)
         
         // Show a notification that the item was copied
-        showCopiedNotification(item.content)
+        showCopiedNotification(item.isImage ? "Image" : item.content)
         
-        // Give the system a moment to process the clipboard change
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            // Check if we should auto-paste
-            let prefs = Preferences.shared
-            if prefs.autoPaste {
-                self.simulatePasteKeystroke()
-            } else {
-                // Show a notification to manually paste
-                let notification = NSUserNotification()
-                notification.title = "Copied to Clipboard"
-                notification.informativeText = "Press Cmd+V to paste"
-                notification.soundName = NSUserNotificationDefaultSoundName
-                NSUserNotificationCenter.default.deliver(notification)
+        // Only show manual paste notification if auto-paste is disabled and not called from HistoryWindowController
+        // We can detect this by checking if we're on the main thread
+        if !Preferences.shared.autoPaste && Thread.isMainThread {
+            // Check if we're running from a proper bundle
+            if Bundle.main.bundleIdentifier == nil {
+                // We're running from the command line, use NSLog instead
+                NSLog("Press Cmd+V to paste")
+                return
+            }
+            
+            // Show a notification to manually paste
+            let content = UNMutableNotificationContent()
+            content.title = "Copied to Clipboard"
+            content.body = "Press Cmd+V to paste"
+            
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    NSLog("Error showing notification: \(error)")
+                }
             }
         }
     }
@@ -377,20 +460,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Only show notification if preferences allow it
         let prefs = Preferences.shared
         if prefs.showNotifications {
+            // Check if we're running from a proper bundle
+            if Bundle.main.bundleIdentifier == nil {
+                // We're running from the command line, use NSLog instead
+                NSLog("Copied to Clipboard: \(contentText)")
+                return
+            }
+            
+            // Use UserNotifications framework
             let content = UNMutableNotificationContent()
             content.title = "Copied to Clipboard"
             
-            // Truncate content for notification
-            let displayText = contentText.count > 50 ? String(contentText.prefix(47)) + "..." : contentText
-            content.body = displayText
+            // Check if this is an image notification
+            if contentText == "Image" {
+                content.body = "Image copied to clipboard"
+            } else {
+                // Truncate content for notification
+                let displayText = contentText.count > 50 ? String(contentText.prefix(47)) + "..." : contentText
+                content.body = displayText
+            }
             
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    NSLog("Error showing notification: \(error)")
+                }
+            }
         }
     }
 
-    private func simulatePasteKeystroke() {
-        // Check if accessibility permissions are granted
+    private func simulatePasteKeystroke(isRichText: Bool = false, isImage: Bool = false) {
+        Logger.shared.log("Simulating paste keystroke" + (isRichText ? " (Rich Text)" : "") + (isImage ? " (Image)" : ""))
+        
         guard AXIsProcessTrusted() else {
             Logger.shared.log("Cannot simulate paste: accessibility permissions not granted")
             // Request permissions if not granted
@@ -398,8 +499,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
         
-        // Use the centralized PasteManager
-        PasteManager.shared.paste()
+        // Use the centralized PasteManager with rich text and image information
+        PasteManager.shared.paste(isRichText: isRichText, isImage: isImage)
     }
 
     private func checkAccessibilityPermissions() {
@@ -523,5 +624,71 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         // Show the notification even when the app is in the foreground
         completionHandler([.banner, .sound])
+    }
+    
+    // Helper method to safely activate the app without changing its activation policy
+    private func safelyActivateApp() {
+        // Save current activation policy
+        let currentPolicy = NSApp.activationPolicy()
+        
+        // Activate the app
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Restore activation policy if needed
+        if currentPolicy != NSApp.activationPolicy() {
+            NSApp.setActivationPolicy(currentPolicy)
+        }
+    }
+    
+    // MARK: - Login Item Management
+    
+    private func updateLoginItemStatus() {
+        if Preferences.shared.launchAtStartup {
+            enableLoginItem()
+        } else {
+            disableLoginItem()
+        }
+    }
+    
+    private func enableLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            Logger.shared.log("Error: Could not get bundle identifier")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use the newer API for macOS 13 (Ventura) and later
+            do {
+                try SMAppService.mainApp.register()
+                Logger.shared.log("Successfully registered app as login item using SMAppService")
+            } catch {
+                Logger.shared.log("Error registering app as login item: \(error.localizedDescription)")
+            }
+        } else {
+            // Use the older API for macOS 12 and earlier
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, true)
+            Logger.shared.log("Setting login item enabled: \(success ? "success" : "failed")")
+        }
+    }
+    
+    private func disableLoginItem() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            Logger.shared.log("Error: Could not get bundle identifier")
+            return
+        }
+        
+        if #available(macOS 13.0, *) {
+            // Use the newer API for macOS 13 (Ventura) and later
+            do {
+                try SMAppService.mainApp.unregister()
+                Logger.shared.log("Successfully unregistered app as login item using SMAppService")
+            } catch {
+                Logger.shared.log("Error unregistering app as login item: \(error.localizedDescription)")
+            }
+        } else {
+            // Use the older API for macOS 12 and earlier
+            let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, false)
+            Logger.shared.log("Setting login item disabled: \(success ? "success" : "failed")")
+        }
     }
 } 

@@ -462,8 +462,10 @@ class PreferencesWindowController: NSWindowController {
     
     private var useSystemAppearanceCheckbox: NSButton!
     private var darkModeCheckbox: NSButton!
+    private var customizeAppearanceCheckbox: NSButton!
     private var backgroundColorPicker: TerminalStyleColorPicker!
     private var backgroundAlphaSlider: NSSlider!
+    private var backgroundAlphaValueLabel: NSTextField?
     private var textColorPicker: TerminalStyleColorPicker!
     private var fullClipboardTransparencyCheckbox: NSButton!
     private var windowBackgroundColorPicker: TerminalStyleColorPicker!
@@ -475,8 +477,8 @@ class PreferencesWindowController: NSWindowController {
     private var maxHistoryItemsSlider: NSSlider!
     
     private var showNotificationsCheckbox: NSButton!
-    private var closeAfterCopyCheckbox: NSButton!
     private var autoPasteCheckbox: NSButton!
+    private var launchAtStartupCheckbox: NSButton!
     
     // Hotkey UI elements
     private var hotkeyKeyPopup: NSPopUpButton!
@@ -550,6 +552,8 @@ class PreferencesWindowController: NSWindowController {
         
         // Force the app to be active first
         NSApp.activate(ignoringOtherApps: true)
+        // Ensure we maintain accessory policy
+        NSApp.setActivationPolicy(.accessory)
         
         // Make the window key and bring it to front
         super.showWindow(sender)
@@ -564,6 +568,8 @@ class PreferencesWindowController: NSWindowController {
                 print("Window still not visible after showWindow, forcing again")
                 window.orderFrontRegardless()
                 NSApp.activate(ignoringOtherApps: true)
+                // Ensure we maintain accessory policy
+                NSApp.setActivationPolicy(.accessory)
             }
         }
         
@@ -673,20 +679,46 @@ class PreferencesWindowController: NSWindowController {
         scrollView.documentView = appearanceTab
         
         // Section title for Appearance settings
-        let appearanceSectionLabel = NSTextField(labelWithString: "Appearance Settings")
-        appearanceSectionLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 40, width: 200, height: 24)
+        let appearanceSectionLabel = NSTextField(labelWithString: "Clipboard Window Appearance")
+        appearanceSectionLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 40, width: 300, height: 24)
         appearanceSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
         appearanceSectionLabel.textColor = NSColor.labelColor
         appearanceTab.addSubview(appearanceSectionLabel)
         
+        // Add explanation that these settings only apply to the clipboard window
+        let appearanceExplanationLabel = NSTextField(labelWithString: "These settings only affect the clipboard history window. Other windows follow system appearance.")
+        appearanceExplanationLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 65, width: appearanceTab.bounds.width - 40, height: 20)
+        appearanceExplanationLabel.font = NSFont.systemFont(ofSize: 11)
+        appearanceExplanationLabel.textColor = NSColor.secondaryLabelColor
+        appearanceExplanationLabel.isEditable = false
+        appearanceExplanationLabel.isBordered = false
+        appearanceExplanationLabel.drawsBackground = false
+        appearanceTab.addSubview(appearanceExplanationLabel)
+        
+        // Move the three appearance options to the top
+        // Use system appearance checkbox
+        useSystemAppearanceCheckbox = NSButton(checkboxWithTitle: "Use system appearance", target: self, action: #selector(toggleAppearanceOption))
+        useSystemAppearanceCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 95, width: 200, height: 20)
+        appearanceTab.addSubview(useSystemAppearanceCheckbox)
+        
+        // Dark mode checkbox
+        darkModeCheckbox = NSButton(checkboxWithTitle: "Dark mode", target: self, action: #selector(toggleAppearanceOption))
+        darkModeCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 125, width: 200, height: 20)
+        appearanceTab.addSubview(darkModeCheckbox)
+        
+        // Customize appearance checkbox
+        customizeAppearanceCheckbox = NSButton(checkboxWithTitle: "Customize appearance", target: self, action: #selector(toggleAppearanceOption))
+        customizeAppearanceCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 155, width: 200, height: 20)
+        appearanceTab.addSubview(customizeAppearanceCheckbox)
+        
         // Card item color section - INCREASED SPACING
         let cardItemColorLabel = NSTextField(labelWithString: "Card item color:")
-        cardItemColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 100, width: 150, height: 20) // More space
+        cardItemColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 215, width: 150, height: 20) // More space
         appearanceTab.addSubview(cardItemColorLabel)
         
         // Replace NSColorWell with TerminalStyleColorPicker - INCREASED SPACING
         backgroundColorPicker = TerminalStyleColorPicker(
-            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 210, width: 150, height: 90), // More space
+            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 310, width: 150, height: 90), // More space
             initialColor: NSColor.white,
             action: { [weak self] color in
                 self?.applyChanges()
@@ -696,12 +728,12 @@ class PreferencesWindowController: NSWindowController {
         
         // Add more space between sections - Card item transparency - INCREASED SPACING
         let backgroundAlphaLabel = NSTextField(labelWithString: "Card item transparency:")
-        backgroundAlphaLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 280, width: 150, height: 20) // More space
+        backgroundAlphaLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 380, width: 150, height: 20) // More space
         appearanceTab.addSubview(backgroundAlphaLabel)
         
         // Add explanation label with more space - MOVED DOWN
         let explanationLabel = NSTextField(labelWithString: "Controls the transparency of clipboard card item backgrounds (text remains fully visible)")
-        explanationLabel.frame = NSRect(x: 180, y: appearanceTab.bounds.height - 300, width: 350, height: 16) // More space
+        explanationLabel.frame = NSRect(x: 180, y: appearanceTab.bounds.height - 400, width: 350, height: 16) // More space
         explanationLabel.font = NSFont.systemFont(ofSize: 10)
         explanationLabel.textColor = NSColor.secondaryLabelColor
         explanationLabel.isEditable = false
@@ -710,15 +742,18 @@ class PreferencesWindowController: NSWindowController {
         appearanceTab.addSubview(explanationLabel)
         
         // Create transparency value label - MOVED DOWN
-        let transparencyValueLabel = NSTextField(frame: NSRect(x: 390, y: appearanceTab.bounds.height - 280, width: 50, height: 20))
+        let transparencyValueLabel = NSTextField(frame: NSRect(x: 390, y: appearanceTab.bounds.height - 380, width: 50, height: 20))
         transparencyValueLabel.isEditable = false
         transparencyValueLabel.isBordered = false
         transparencyValueLabel.drawsBackground = false
         transparencyValueLabel.stringValue = "0.00"
         appearanceTab.addSubview(transparencyValueLabel)
         
+        // Store a reference to the transparency value label
+        backgroundAlphaValueLabel = transparencyValueLabel
+        
         // Then create the slider with a custom action - MOVED DOWN
-        backgroundAlphaSlider = NSSlider(frame: NSRect(x: 180, y: appearanceTab.bounds.height - 280, width: 200, height: 20))
+        backgroundAlphaSlider = NSSlider(frame: NSRect(x: 180, y: appearanceTab.bounds.height - 380, width: 200, height: 20))
         backgroundAlphaSlider.minValue = 0.0
         backgroundAlphaSlider.maxValue = 1.0
         backgroundAlphaSlider.target = self
@@ -728,12 +763,12 @@ class PreferencesWindowController: NSWindowController {
         
         // Add more space - Full clipboard transparency checkbox - INCREASED SPACING
         fullClipboardTransparencyCheckbox = NSButton(checkboxWithTitle: "Enable full clipboard transparency", target: self, action: #selector(applyChanges))
-        fullClipboardTransparencyCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 360, width: 300, height: 20) // More space
+        fullClipboardTransparencyCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 460, width: 300, height: 20) // More space
         appearanceTab.addSubview(fullClipboardTransparencyCheckbox)
         
         // Add explanation for full clipboard transparency with more space - INCREASED SPACING
         let fullTransparencyExplanationLabel = NSTextField(labelWithString: "Makes the entire clipboard window transparent, not just individual items")
-        fullTransparencyExplanationLabel.frame = NSRect(x: 40, y: appearanceTab.bounds.height - 380, width: 350, height: 16) // More space
+        fullTransparencyExplanationLabel.frame = NSRect(x: 40, y: appearanceTab.bounds.height - 480, width: 350, height: 16) // More space
         fullTransparencyExplanationLabel.font = NSFont.systemFont(ofSize: 10)
         fullTransparencyExplanationLabel.textColor = NSColor.secondaryLabelColor
         fullTransparencyExplanationLabel.isEditable = false
@@ -743,12 +778,12 @@ class PreferencesWindowController: NSWindowController {
         
         // NEW: Clipboard window background color section with more space - INCREASED SPACING
         let windowBackgroundColorLabel = NSTextField(labelWithString: "Clipboard window background color:")
-        windowBackgroundColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 440, width: 200, height: 20) // More space
+        windowBackgroundColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 560, width: 200, height: 20) // More space
         appearanceTab.addSubview(windowBackgroundColorLabel)
         
         // Add a new color picker for window background - INCREASED SPACING
         windowBackgroundColorPicker = TerminalStyleColorPicker(
-            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 550, width: 150, height: 90), // More space
+            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 670, width: 150, height: 90), // More space
             initialColor: NSColor.windowBackgroundColor,
             action: { [weak self] color in
                 self?.applyChanges()
@@ -758,28 +793,18 @@ class PreferencesWindowController: NSWindowController {
         
         // Text color section with more space - INCREASED SPACING
         let textColorLabel = NSTextField(labelWithString: "Text color:")
-        textColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 620, width: 150, height: 20) // More space
+        textColorLabel.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 740, width: 150, height: 20) // More space
         appearanceTab.addSubview(textColorLabel)
         
         // Replace NSColorWell with TerminalStyleColorPicker - INCREASED SPACING
         textColorPicker = TerminalStyleColorPicker(
-            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 730, width: 150, height: 90), // More space
+            frame: NSRect(x: 180, y: appearanceTab.bounds.height - 850, width: 150, height: 90), // More space
             initialColor: NSColor.black,
             action: { [weak self] color in
                 self?.applyChanges()
             }
         )
         appearanceTab.addSubview(textColorPicker)
-        
-        // Dark mode checkbox with more space - INCREASED SPACING
-        darkModeCheckbox = NSButton(checkboxWithTitle: "Dark mode", target: self, action: #selector(applyChanges))
-        darkModeCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 800, width: 200, height: 20) // More space
-        appearanceTab.addSubview(darkModeCheckbox)
-        
-        // Use system appearance checkbox with more space - INCREASED SPACING
-        useSystemAppearanceCheckbox = NSButton(checkboxWithTitle: "Use system appearance", target: self, action: #selector(toggleSystemAppearance))
-        useSystemAppearanceCheckbox.frame = NSRect(x: 20, y: appearanceTab.bounds.height - 830, width: 200, height: 20) // More space
-        appearanceTab.addSubview(useSystemAppearanceCheckbox)
         
         // Add a note about live preview
         let livePreviewLabel = NSTextField(labelWithString: "Changes are applied in real-time to the clipboard window")
@@ -963,6 +988,7 @@ class PreferencesWindowController: NSWindowController {
         maxHistoryItemsSlider = NSSlider(frame: NSRect(x: 180, y: sizeTab.bounds.height - 340, width: 200, height: 20))
         maxHistoryItemsSlider.minValue = 5
         maxHistoryItemsSlider.maxValue = 100
+        maxHistoryItemsSlider.intValue = 20 // Set default value to 20
         maxHistoryItemsSlider.target = self
         maxHistoryItemsSlider.action = #selector(maxHistoryItemsSliderChanged)
         maxHistoryItemsSlider.tag = maxHistoryItemsValueLabel.hash
@@ -1016,29 +1042,14 @@ class PreferencesWindowController: NSWindowController {
         windowBehaviorSectionLabel.textColor = NSColor.labelColor
         behaviorTab.addSubview(windowBehaviorSectionLabel)
         
-        // Close after copy checkbox
-        closeAfterCopyCheckbox = NSButton(checkboxWithTitle: "Close window after copying", target: self, action: #selector(applyChanges))
-        closeAfterCopyCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 80, width: 250, height: 20)
-        behaviorTab.addSubview(closeAfterCopyCheckbox)
-        
-        // Close after copy explanation
-        let closeAfterCopyExplanation = NSTextField(labelWithString: "Automatically closes the clipboard window after you select an item")
-        closeAfterCopyExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 100, width: 350, height: 16)
-        closeAfterCopyExplanation.font = NSFont.systemFont(ofSize: 10)
-        closeAfterCopyExplanation.textColor = NSColor.secondaryLabelColor
-        closeAfterCopyExplanation.isEditable = false
-        closeAfterCopyExplanation.isBordered = false
-        closeAfterCopyExplanation.drawsBackground = false
-        behaviorTab.addSubview(closeAfterCopyExplanation)
-        
         // Auto paste checkbox
-        autoPasteCheckbox = NSButton(checkboxWithTitle: "Automatically paste after copying", target: self, action: #selector(applyChanges))
-        autoPasteCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 130, width: 250, height: 20)
+        autoPasteCheckbox = NSButton(checkboxWithTitle: "Auto-paste after copying", target: self, action: #selector(applyChanges))
+        autoPasteCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 80, width: 250, height: 20)
         behaviorTab.addSubview(autoPasteCheckbox)
         
         // Auto paste explanation
-        let autoPasteExplanation = NSTextField(labelWithString: "Automatically pastes the selected item after copying (requires accessibility permissions)")
-        autoPasteExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 150, width: 350, height: 16)
+        let autoPasteExplanation = NSTextField(labelWithString: "Automatically pastes the copied item after selection")
+        autoPasteExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 100, width: 350, height: 16)
         autoPasteExplanation.font = NSFont.systemFont(ofSize: 10)
         autoPasteExplanation.textColor = NSColor.secondaryLabelColor
         autoPasteExplanation.isEditable = false
@@ -1114,26 +1125,41 @@ class PreferencesWindowController: NSWindowController {
         behaviorTab.addSubview(hotkeyWarning)
         
         // Section title for Notification settings
-        let notificationSectionLabel = NSTextField(labelWithString: "Notifications")
-        notificationSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 375, width: 200, height: 24)
-        notificationSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
-        notificationSectionLabel.textColor = NSColor.labelColor
-        behaviorTab.addSubview(notificationSectionLabel)
+        let notificationsSectionLabel = NSTextField(labelWithString: "Notifications")
+        notificationsSectionLabel.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 365, width: 200, height: 24)
+        notificationsSectionLabel.font = NSFont.boldSystemFont(ofSize: 14)
+        notificationsSectionLabel.textColor = NSColor.labelColor
+        behaviorTab.addSubview(notificationsSectionLabel)
         
         // Show notifications checkbox
         showNotificationsCheckbox = NSButton(checkboxWithTitle: "Show notifications", target: self, action: #selector(applyChanges))
-        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 415, width: 200, height: 20)
+        showNotificationsCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 395, width: 200, height: 20)
         behaviorTab.addSubview(showNotificationsCheckbox)
         
-        // Notifications explanation
-        let notificationsExplanation = NSTextField(labelWithString: "Show notifications when items are copied to clipboard")
-        notificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 435, width: 350, height: 16)
-        notificationsExplanation.font = NSFont.systemFont(ofSize: 10)
-        notificationsExplanation.textColor = NSColor.secondaryLabelColor
-        notificationsExplanation.isEditable = false
-        notificationsExplanation.isBordered = false
-        notificationsExplanation.drawsBackground = false
-        behaviorTab.addSubview(notificationsExplanation)
+        // Show notifications explanation
+        let showNotificationsExplanation = NSTextField(labelWithString: "Display notifications when items are copied to clipboard")
+        showNotificationsExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 415, width: 350, height: 16)
+        showNotificationsExplanation.font = NSFont.systemFont(ofSize: 10)
+        showNotificationsExplanation.textColor = NSColor.secondaryLabelColor
+        showNotificationsExplanation.isEditable = false
+        showNotificationsExplanation.isBordered = false
+        showNotificationsExplanation.drawsBackground = false
+        behaviorTab.addSubview(showNotificationsExplanation)
+        
+        // Launch at startup checkbox
+        launchAtStartupCheckbox = NSButton(checkboxWithTitle: "Launch at system startup", target: self, action: #selector(applyChanges))
+        launchAtStartupCheckbox.frame = NSRect(x: 20, y: behaviorTab.bounds.height - 130, width: 250, height: 20)
+        behaviorTab.addSubview(launchAtStartupCheckbox)
+        
+        // Launch at startup explanation
+        let launchAtStartupExplanation = NSTextField(labelWithString: "Automatically launch Clipboard Manager when you log in")
+        launchAtStartupExplanation.frame = NSRect(x: 40, y: behaviorTab.bounds.height - 150, width: 350, height: 16)
+        launchAtStartupExplanation.font = NSFont.systemFont(ofSize: 10)
+        launchAtStartupExplanation.textColor = NSColor.secondaryLabelColor
+        launchAtStartupExplanation.isEditable = false
+        launchAtStartupExplanation.isBordered = false
+        launchAtStartupExplanation.drawsBackground = false
+        behaviorTab.addSubview(launchAtStartupExplanation)
         
         // Scroll to the top initially
         if let documentView = scrollView.documentView {
@@ -1169,6 +1195,7 @@ class PreferencesWindowController: NSWindowController {
         // Make sure all UI elements are initialized
         guard useSystemAppearanceCheckbox != nil &&
               darkModeCheckbox != nil &&
+              customizeAppearanceCheckbox != nil &&
               backgroundColorPicker != nil &&
               backgroundAlphaSlider != nil &&
               textColorPicker != nil &&
@@ -1180,8 +1207,8 @@ class PreferencesWindowController: NSWindowController {
               windowHeightSlider != nil &&
               maxHistoryItemsSlider != nil &&
               showNotificationsCheckbox != nil &&
-              closeAfterCopyCheckbox != nil &&
               autoPasteCheckbox != nil &&
+              launchAtStartupCheckbox != nil &&
               hotkeyKeyPopup != nil &&
               hotkeyCommandCheckbox != nil &&
               hotkeyShiftCheckbox != nil &&
@@ -1191,10 +1218,49 @@ class PreferencesWindowController: NSWindowController {
             return
         }
         
-        // Appearance
-        useSystemAppearanceCheckbox.state = prefs.useSystemAppearance ? .on : .off
-        darkModeCheckbox.state = prefs.darkMode ? .on : .off
-        darkModeCheckbox.isEnabled = !prefs.useSystemAppearance
+        // Appearance - set only one checkbox based on preferences
+        if prefs.useSystemAppearance {
+            useSystemAppearanceCheckbox.state = .on
+            darkModeCheckbox.state = .off
+            customizeAppearanceCheckbox.state = .off
+        } else if prefs.darkMode {
+            useSystemAppearanceCheckbox.state = .off
+            darkModeCheckbox.state = .on
+            customizeAppearanceCheckbox.state = .off
+        } else if prefs.customizeAppearance {
+            useSystemAppearanceCheckbox.state = .off
+            darkModeCheckbox.state = .off
+            customizeAppearanceCheckbox.state = .on
+        } else {
+            // Default to system appearance if nothing is set
+            useSystemAppearanceCheckbox.state = .on
+            darkModeCheckbox.state = .off
+            customizeAppearanceCheckbox.state = .off
+            prefs.useSystemAppearance = true
+        }
+        
+        // Set initial visibility of customization controls based on customizeAppearance setting
+        let isCustomizing = prefs.customizeAppearance
+        backgroundColorPicker.isHidden = !isCustomizing
+        backgroundAlphaSlider.isHidden = !isCustomizing
+        backgroundAlphaValueLabel?.isHidden = !isCustomizing
+        textColorPicker.isHidden = !isCustomizing
+        windowBackgroundColorPicker.isHidden = !isCustomizing
+        fullClipboardTransparencyCheckbox.isHidden = !isCustomizing
+        
+        // Also hide the labels when customization is off
+        for subview in appearanceTab.subviews {
+            if let textField = subview as? NSTextField, 
+               textField.isEditable == false && 
+               textField.isBordered == false &&
+               textField != backgroundAlphaValueLabel {
+                // Skip the live preview label at the bottom and the section title
+                if textField.frame.origin.y > 50 && 
+                   textField.frame.origin.y < appearanceTab.bounds.height - 50 {
+                    textField.isHidden = !isCustomizing
+                }
+            }
+        }
         
         if let color = NSColor.fromHex(prefs.cardBackgroundColor) {
             backgroundColorPicker.color = color
@@ -1223,8 +1289,8 @@ class PreferencesWindowController: NSWindowController {
         
         // Behavior
         showNotificationsCheckbox.state = prefs.showNotifications ? .on : .off
-        closeAfterCopyCheckbox.state = prefs.closeAfterCopy ? .on : .off
         autoPasteCheckbox.state = prefs.autoPaste ? .on : .off
+        launchAtStartupCheckbox.state = prefs.launchAtStartup ? .on : .off
         
         // Hotkey
         hotkeyKeyPopup.selectItem(at: prefs.hotkeyKeyIndex)
@@ -1236,8 +1302,47 @@ class PreferencesWindowController: NSWindowController {
         applyChanges()
     }
     
-    @objc private func toggleSystemAppearance() {
-        darkModeCheckbox.isEnabled = useSystemAppearanceCheckbox.state == .off
+    @objc private func toggleAppearanceOption(_ sender: NSButton) {
+        // Determine which checkbox was clicked
+        if sender == useSystemAppearanceCheckbox && sender.state == .on {
+            // If system appearance is checked, uncheck the others
+            darkModeCheckbox.state = .off
+            customizeAppearanceCheckbox.state = .off
+        } else if sender == darkModeCheckbox && sender.state == .on {
+            // If dark mode is checked, uncheck the others
+            useSystemAppearanceCheckbox.state = .off
+            customizeAppearanceCheckbox.state = .off
+        } else if sender == customizeAppearanceCheckbox && sender.state == .on {
+            // If customize appearance is checked, uncheck the others
+            useSystemAppearanceCheckbox.state = .off
+            darkModeCheckbox.state = .off
+        }
+        
+        // Handle visibility of customization controls
+        let isCustomizing = customizeAppearanceCheckbox.state == .on
+        
+        // Toggle visibility of customization controls
+        backgroundColorPicker.isHidden = !isCustomizing
+        backgroundAlphaSlider.isHidden = !isCustomizing
+        backgroundAlphaValueLabel?.isHidden = !isCustomizing
+        textColorPicker.isHidden = !isCustomizing
+        windowBackgroundColorPicker.isHidden = !isCustomizing
+        fullClipboardTransparencyCheckbox.isHidden = !isCustomizing
+        
+        // Also hide the labels when customization is off
+        for subview in appearanceTab.subviews {
+            if let textField = subview as? NSTextField, 
+               textField.isEditable == false && 
+               textField.isBordered == false &&
+               textField != backgroundAlphaValueLabel {
+                // Skip the live preview label at the bottom and the section title
+                if textField.frame.origin.y > 50 && 
+                   textField.frame.origin.y < appearanceTab.bounds.height - 50 {
+                    textField.isHidden = !isCustomizing
+                }
+            }
+        }
+        
         applyChanges()
     }
     
@@ -1245,14 +1350,44 @@ class PreferencesWindowController: NSWindowController {
         // Save the current preferences temporarily
         let prefs = Preferences.shared
         
-        // Update preferences with current values
+        // Update preferences with current values based on which option is selected
         prefs.useSystemAppearance = useSystemAppearanceCheckbox.state == .on
         prefs.darkMode = darkModeCheckbox.state == .on
-        prefs.cardBackgroundColor = backgroundColorPicker.color.toHex()
-        prefs.cardBackgroundAlpha = backgroundAlphaSlider.floatValue
-        prefs.textColor = textColorPicker.color.toHex()
-        prefs.fullClipboardTransparency = fullClipboardTransparencyCheckbox.state == .on
-        prefs.windowBackgroundColor = windowBackgroundColorPicker.color.toHex()
+        prefs.customizeAppearance = customizeAppearanceCheckbox.state == .on
+        
+        // Only apply these settings if customization is enabled
+        if prefs.customizeAppearance {
+            prefs.cardBackgroundColor = backgroundColorPicker.color.toHex()
+            prefs.cardBackgroundAlpha = backgroundAlphaSlider.floatValue
+            prefs.textColor = textColorPicker.color.toHex()
+            prefs.fullClipboardTransparency = fullClipboardTransparencyCheckbox.state == .on
+            prefs.windowBackgroundColor = windowBackgroundColorPicker.color.toHex()
+        }
+        
+        // Update size preferences
+        prefs.cardHeight = Int(cardHeightSlider.intValue)
+        prefs.cardSpacing = Int(cardSpacingSlider.intValue)
+        prefs.windowWidth = Int(windowWidthSlider.intValue)
+        prefs.windowHeight = Int(windowHeightSlider.intValue)
+        prefs.maxHistoryItems = Int(maxHistoryItemsSlider.intValue)
+        
+        // Update behavior preferences
+        prefs.showNotifications = showNotificationsCheckbox.state == .on
+        prefs.autoPaste = autoPasteCheckbox.state == .on
+        prefs.launchAtStartup = launchAtStartupCheckbox.state == .on
+        
+        // Update hotkey preferences
+        prefs.hotkeyKeyIndex = hotkeyKeyPopup.indexOfSelectedItem
+        prefs.hotkeyCommand = hotkeyCommandCheckbox.state == .on
+        prefs.hotkeyShift = hotkeyShiftCheckbox.state == .on
+        prefs.hotkeyOption = hotkeyOptionCheckbox.state == .on
+        prefs.hotkeyControl = hotkeyControlCheckbox.state == .on
+        
+        // Save preferences to disk
+        prefs.savePreferences()
+        
+        // The preferences window should always use system appearance
+        // This is handled by the AppDelegate's applyAppearanceSettings method
         
         // Notify that preferences have changed to update the clipboard window in real-time
         NotificationCenter.default.post(name: NSNotification.Name("PreferencesChanged"), object: nil)
@@ -1310,14 +1445,19 @@ class PreferencesWindowController: NSWindowController {
     @objc private func savePreferences() {
         let prefs = Preferences.shared
         
-        // Appearance
+        // Appearance - set based on which checkbox is selected
         prefs.useSystemAppearance = useSystemAppearanceCheckbox.state == .on
         prefs.darkMode = darkModeCheckbox.state == .on
-        prefs.cardBackgroundColor = backgroundColorPicker.color.toHex()
-        prefs.cardBackgroundAlpha = backgroundAlphaSlider.floatValue
-        prefs.textColor = textColorPicker.color.toHex()
-        prefs.fullClipboardTransparency = fullClipboardTransparencyCheckbox.state == .on
-        prefs.windowBackgroundColor = windowBackgroundColorPicker.color.toHex()
+        prefs.customizeAppearance = customizeAppearanceCheckbox.state == .on
+        
+        // Only save customization settings if customization is enabled
+        if prefs.customizeAppearance {
+            prefs.cardBackgroundColor = backgroundColorPicker.color.toHex()
+            prefs.cardBackgroundAlpha = backgroundAlphaSlider.floatValue
+            prefs.textColor = textColorPicker.color.toHex()
+            prefs.fullClipboardTransparency = fullClipboardTransparencyCheckbox.state == .on
+            prefs.windowBackgroundColor = windowBackgroundColorPicker.color.toHex()
+        }
         
         // Size
         prefs.cardHeight = Int(cardHeightSlider.intValue)
@@ -1328,8 +1468,8 @@ class PreferencesWindowController: NSWindowController {
         
         // Behavior
         prefs.showNotifications = showNotificationsCheckbox.state == .on
-        prefs.closeAfterCopy = closeAfterCopyCheckbox.state == .on
         prefs.autoPaste = autoPasteCheckbox.state == .on
+        prefs.launchAtStartup = launchAtStartupCheckbox.state == .on
         
         // Hotkey
         prefs.hotkeyKeyIndex = hotkeyKeyPopup.indexOfSelectedItem

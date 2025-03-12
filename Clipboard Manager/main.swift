@@ -18,6 +18,9 @@ let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 
+// Set the activation policy to accessory to prevent the app from appearing in the Dock
+app.setActivationPolicy(.accessory)
+
 // Enable debug logging for accessibility if in debug mode
 if isDebugMode {
     UserDefaults.standard.set(true, forKey: "AXSEnableDebugLogging")

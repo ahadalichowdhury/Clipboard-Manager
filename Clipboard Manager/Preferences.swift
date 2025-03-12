@@ -4,6 +4,7 @@ class Preferences: Codable {
     // Appearance
     var useSystemAppearance: Bool = true
     var darkMode: Bool = false
+    var customizeAppearance: Bool = false // Controls whether to show customization options
     var cardBackgroundColor: String = "#FFFFFF" // Hex color
     var cardBackgroundAlpha: Float = 1.0 // 0.0 to 1.0
     var textColor: String = "#000000" // Hex color
@@ -19,8 +20,8 @@ class Preferences: Codable {
     
     // Behavior
     var showNotifications: Bool = true
-    var closeAfterCopy: Bool = true
     var autoPaste: Bool = true // Whether to automatically paste after copying
+    var launchAtStartup: Bool = true // Whether to launch the app at system startup
     
     // Hotkey
     var hotkeyKeyIndex: Int = 21 // Default to "V" (index 21 in the popup)
@@ -62,7 +63,21 @@ class Preferences: Codable {
     }
     
     func windowBackgroundNSColor() -> NSColor {
-        return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+        if useSystemAppearance {
+            // Use system appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                return NSColor.fromHex("#222222") ?? NSColor.darkGray
+            } else {
+                return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+            }
+        } else if darkMode {
+            // Use dark mode colors
+            return NSColor.fromHex("#222222") ?? NSColor.darkGray
+        } else {
+            // Use light mode colors
+            return NSColor.fromHex(windowBackgroundColor) ?? NSColor.windowBackgroundColor
+        }
     }
     
     func adaptToSystemAppearance() {
@@ -107,6 +122,7 @@ class Preferences: Codable {
                 // Copy all properties from loaded preferences
                 self.useSystemAppearance = loadedPreferences.useSystemAppearance
                 self.darkMode = loadedPreferences.darkMode
+                self.customizeAppearance = loadedPreferences.customizeAppearance
                 self.cardBackgroundColor = loadedPreferences.cardBackgroundColor
                 self.cardBackgroundAlpha = loadedPreferences.cardBackgroundAlpha
                 self.textColor = loadedPreferences.textColor
@@ -123,11 +139,15 @@ class Preferences: Codable {
                 self.windowHeight = loadedPreferences.windowHeight
                 self.maxHistoryItems = loadedPreferences.maxHistoryItems
                 self.showNotifications = loadedPreferences.showNotifications
-                self.closeAfterCopy = loadedPreferences.closeAfterCopy
                 
                 // Handle the new autoPaste property (might not exist in older preference files)
                 if let autoPasteValue = Mirror(reflecting: loadedPreferences).children.first(where: { $0.label == "autoPaste" })?.value as? Bool {
                     self.autoPaste = autoPasteValue
+                }
+                
+                // Handle the new launchAtStartup property (might not exist in older preference files)
+                if let launchAtStartupValue = Mirror(reflecting: loadedPreferences).children.first(where: { $0.label == "launchAtStartup" })?.value as? Bool {
+                    self.launchAtStartup = launchAtStartupValue
                 }
                 
                 // Handle the new hotkey properties (might not exist in older preference files)
@@ -197,5 +217,20 @@ extension NSColor {
         let b = Int(round(rgbColor.blueComponent * 255))
         
         return String(format: "#%02X%02X%02X", r, g, b)
+    }
+    
+    // Add a method to blend colors for selection highlighting
+    func blended(withFraction fraction: CGFloat, of color: NSColor) -> NSColor? {
+        guard let rgb1 = self.usingColorSpace(.sRGB),
+              let rgb2 = color.usingColorSpace(.sRGB) else {
+            return nil
+        }
+        
+        let r = rgb1.redComponent * (1 - fraction) + rgb2.redComponent * fraction
+        let g = rgb1.greenComponent * (1 - fraction) + rgb2.greenComponent * fraction
+        let b = rgb1.blueComponent * (1 - fraction) + rgb2.blueComponent * fraction
+        let a = rgb1.alphaComponent * (1 - fraction) + rgb2.alphaComponent * fraction
+        
+        return NSColor(red: r, green: g, blue: b, alpha: a)
     }
 } 

@@ -2,7 +2,6 @@ import Cocoa
 import UserNotifications
 import ApplicationServices
 import UniformTypeIdentifiers
-import Carbon.HIToolbox
 
 class ClipboardItemCard: NSView {
     private var contentLabel: NSTextField!
@@ -10,7 +9,6 @@ class ClipboardItemCard: NSView {
     private var pinButton: NSButton!
     private var menuButton: NSButton!
     private var saveButton: NSButton?
-    private var pasteButton: NSButton? // Add paste button property
     private var formatIndicator: NSTextField?
     var item: ClipboardItem!
     private var clickAction: ((ClipboardItem) -> Void)?
@@ -65,33 +63,24 @@ class ClipboardItemCard: NSView {
                 // Add click gesture for the image area
                 let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
                 clickGesture.numberOfClicksRequired = 1
-                clickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
+                clickGesture.delaysPrimaryMouseButtonEvents = true
+                imageView.addGestureRecognizer(clickGesture)
                 
                 // Add double-click gesture for viewing the image
                 let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
                 doubleClickGesture.numberOfClicksRequired = 2
-                doubleClickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
-                
-                // Add the gestures in the correct order - double-click first
+                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
                 imageView.addGestureRecognizer(doubleClickGesture)
-                imageView.addGestureRecognizer(clickGesture)
-                
-                // Make the image view accept mouse events
-                imageView.acceptsTouchEvents = true
                 
                 // Make sure double-click takes precedence
-                // This line was causing build errors - NSClickGestureRecognizer doesn't have this method
-                // clickGesture.requireGestureRecognizerToFail(doubleClickGesture)
-                
-                // Make the image view accept touch events
-                imageView.allowedTouchTypes = [.direct]
+                doubleClickGesture.delaysPrimaryMouseButtonEvents = true
             }
             
             // Add format indicator for images
             addFormatIndicator("Image")
             
             // Add save button for images
-            saveButton = NSButton(frame: NSRect(x: frame.width - 120, y: frame.height - 30, width: 24, height: 24))
+            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
             saveButton?.bezelStyle = .inline
             saveButton?.isBordered = false
             saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
@@ -122,43 +111,9 @@ class ClipboardItemCard: NSView {
                 
                 addSubview(saveButton)
             }
-            
-            // Add paste button for images
-            pasteButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
-            pasteButton?.bezelStyle = .inline
-            pasteButton?.isBordered = false
-            pasteButton?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Paste")
-            pasteButton?.imagePosition = .imageOnly
-            pasteButton?.autoresizingMask = [.minXMargin, .minYMargin]
-            pasteButton?.target = self
-            pasteButton?.action = #selector(pasteButtonClicked)
-            
-            if let pasteButton = pasteButton {
-                // Make the paste button more visible
-                pasteButton.contentTintColor = NSColor.systemGreen
-                
-                // Add hover effect for better visibility
-                pasteButton.wantsLayer = true
-                pasteButton.layer?.cornerRadius = 4
-                
-                // Add tooltip
-                pasteButton.toolTip = "Paste this item"
-                
-                // Add tracking area for hover effects
-                let trackingArea = NSTrackingArea(
-                    rect: pasteButton.bounds,
-                    options: [.mouseEnteredAndExited, .activeAlways],
-                    owner: self,
-                    userInfo: ["button": "paste"]
-                )
-                pasteButton.addTrackingArea(trackingArea)
-                
-                addSubview(pasteButton)
-            }
         } else {
             // Setup text label for text content
-            // Adjust width to leave space for buttons (120px from right edge)
-            contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 150, height: frame.height - 32))
+            contentLabel = NSTextField(frame: NSRect(x: 16, y: 16, width: frame.width - 80, height: frame.height - 32))
             contentLabel.isEditable = false
             contentLabel.isBordered = false
             contentLabel.drawsBackground = false
@@ -168,7 +123,7 @@ class ClipboardItemCard: NSView {
             contentLabel.autoresizingMask = [.width, .height]
             contentLabel.font = NSFont.systemFont(ofSize: 14)
             contentLabel.allowsEditingTextAttributes = true
-            contentLabel.preferredMaxLayoutWidth = frame.width - 150 // Adjust preferred width to match frame
+            contentLabel.preferredMaxLayoutWidth = frame.width - 80
             
             // Set content with highlighting if needed
             updateContentWithHighlight()
@@ -183,22 +138,20 @@ class ClipboardItemCard: NSView {
             // Add click gesture for the content area
             let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewClicked))
             clickGesture.numberOfClicksRequired = 1
-            clickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
+            clickGesture.delaysPrimaryMouseButtonEvents = true
+            contentLabel.addGestureRecognizer(clickGesture)
             
             // Add double-click gesture for editing
             let doubleClickGesture = NSClickGestureRecognizer(target: self, action: #selector(viewDoubleClicked))
             doubleClickGesture.numberOfClicksRequired = 2
-            doubleClickGesture.delaysPrimaryMouseButtonEvents = false // Changed to false to improve responsiveness
-            
-            // Add the gestures in the correct order - double-click first
+            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
             contentLabel.addGestureRecognizer(doubleClickGesture)
-            contentLabel.addGestureRecognizer(clickGesture)
             
-            // Make the content label accept touch events
-            contentLabel.allowedTouchTypes = [.direct]
+            // Make sure double-click takes precedence
+            doubleClickGesture.delaysPrimaryMouseButtonEvents = true
             
             // Add save button for text items (similar to image items)
-            saveButton = NSButton(frame: NSRect(x: frame.width - 120, y: frame.height - 30, width: 24, height: 24))
+            saveButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
             saveButton?.bezelStyle = .inline
             saveButton?.isBordered = false
             saveButton?.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
@@ -228,39 +181,6 @@ class ClipboardItemCard: NSView {
                 saveButton.addTrackingArea(trackingArea)
                 
                 addSubview(saveButton)
-            }
-            
-            // Add paste button for text items
-            pasteButton = NSButton(frame: NSRect(x: frame.width - 90, y: frame.height - 30, width: 24, height: 24))
-            pasteButton?.bezelStyle = .inline
-            pasteButton?.isBordered = false
-            pasteButton?.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Paste")
-            pasteButton?.imagePosition = .imageOnly
-            pasteButton?.autoresizingMask = [.minXMargin, .minYMargin]
-            pasteButton?.target = self
-            pasteButton?.action = #selector(pasteButtonClicked)
-            
-            if let pasteButton = pasteButton {
-                // Make the paste button more visible
-                pasteButton.contentTintColor = NSColor.systemGreen
-                
-                // Add hover effect for better visibility
-                pasteButton.wantsLayer = true
-                pasteButton.layer?.cornerRadius = 4
-                
-                // Add tooltip
-                pasteButton.toolTip = "Paste this item"
-                
-                // Add tracking area for hover effects
-                let trackingArea = NSTrackingArea(
-                    rect: pasteButton.bounds,
-                    options: [.mouseEnteredAndExited, .activeAlways],
-                    owner: self,
-                    userInfo: ["button": "paste"]
-                )
-                pasteButton.addTrackingArea(trackingArea)
-                
-                addSubview(pasteButton)
             }
         }
         
@@ -396,12 +316,6 @@ class ClipboardItemCard: NSView {
             textColor = NSColor.fromHex(prefs.textColor) ?? NSColor.labelColor
         }
         
-        // Guard against empty content
-        guard !item.content.isEmpty else {
-            contentLabel.stringValue = ""
-            return
-        }
-        
         attributedString.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: 0, length: item.content.count))
         
         // Find all occurrences of search text (case insensitive)
@@ -500,77 +414,17 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewClicked() {
-        // Get the current event and its click count
-        let clickCount = NSApp.currentEvent?.clickCount ?? 0
-        print("Click detected with clickCount: \(clickCount)")
-        
-        // If it's a double-click or more, let the double-click handler handle it
-        if clickCount >= 2 {
-            print("Detected multi-click in viewClicked, forwarding to viewDoubleClicked")
-            viewDoubleClicked()
+        // Check if this is part of a double-click sequence
+        if NSApp.currentEvent?.clickCount ?? 0 > 1 {
+            // This is part of a double-click, let the double-click handler handle it
             return
         }
         
         // Notify that this card was clicked (for selection)
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
-        // No longer perform paste action on single click - removed the paste functionality
-    }
-    
-    // Add paste button click handler
-    @objc private func pasteButtonClicked(_ sender: NSButton) {
-        // Prevent event propagation
-        NSApp.preventWindowOrdering()
-        
-        // Log that we're handling a paste action
-        print("Paste button clicked for item: \(item.id), isImage: \(item.isImage)")
-        
-        // Get the currently active application (where the cursor is positioned)
-        let targetApp = NSWorkspace.shared.frontmostApplication
-        print("Target application before paste: \(targetApp?.localizedName ?? "Unknown")")
-        
-        // Perform paste action (copy to clipboard)
+        // Call the click action (for copying to clipboard)
         clickAction?(item)
-        
-        // Always close the window immediately after copying
-        // This is important to get out of the way before pasting
-        if let window = self.window {
-            print("Closing window after copying")
-            window.close()
-        } else {
-            print("Cannot close window (window is nil)")
-        }
-        
-        // Check if we have a valid target application
-        if let targetApp = targetApp, targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
-            print("Pasting to target app: \(targetApp.localizedName ?? "Unknown")")
-            
-            // Reduced delay to make paste operation faster
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                print("Performing universal paste operation")
-                print("isRichText: \(self.item.isRichText), hasMultipleFormats: \(self.item.hasMultipleFormats), isImage: \(self.item.isImage)")
-                
-                // First, ensure the target app is active
-                if #available(macOS 14.0, *) {
-                    targetApp.activate(options: .activateAllWindows)
-                } else {
-                    targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
-                }
-                
-                // Reduced delay to make paste operation faster
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    // Use the universal paste method that works with any application
-                    PasteManager.shared.universalPaste()
-                }
-            }
-        } else {
-            print("No valid target application to paste to")
-            
-            // Reduced delay to make paste operation faster
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                PasteManager.shared.universalPaste()
-            }
-        }
     }
     
     @objc private func pinButtonClicked(_ sender: NSButton) {
@@ -596,11 +450,6 @@ class ClipboardItemCard: NSView {
         let copyItem = NSMenuItem(title: "Copy", action: #selector(copyItemClicked), keyEquivalent: "")
         copyItem.target = self
         menu.addItem(copyItem)
-        
-        // Add "Paste" option
-        let pasteItem = NSMenuItem(title: "Paste", action: #selector(pasteButtonClicked), keyEquivalent: "")
-        pasteItem.target = self
-        menu.addItem(pasteItem)
         
         // Add appropriate edit/view option based on content type
         if item.isImage {
@@ -628,13 +477,7 @@ class ClipboardItemCard: NSView {
     
     @objc private func editItemClicked() {
         // Post notification to edit this item
-        print("Posting EditClipboardItem notification for item: \(item.id)")
-        
-        // Ensure we're on the main thread
-        DispatchQueue.main.async {
-            // Post the notification on the main thread to ensure it's processed correctly
-            NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: self.item.id)
-        }
+        NotificationCenter.default.post(name: NSNotification.Name("EditClipboardItem"), object: item.id)
     }
     
     @objc private func deleteItemClicked() {
@@ -659,13 +502,8 @@ class ClipboardItemCard: NSView {
                 
                 try pngData.write(to: tempFile)
                 
-                // Ensure the app is activated before opening the file
-                NSApp.activate(ignoringOtherApps: true)
-                
-                // Open with default application (Preview on macOS)
+                // Open with default application
                 NSWorkspace.shared.open(tempFile)
-                
-                print("Opening image in Preview: \(tempFile.path)")
             }
         } catch {
             print("Error opening image: \(error)")
@@ -785,33 +623,42 @@ class ClipboardItemCard: NSView {
             // Use modern UTType API
             switch fileExtension {
             case "txt":
-                savePanel.allowedContentTypes = [UTType.plainText]
+                if let txtType = UTType(filenameExtension: "txt") {
+                    print("Using UTType for txt: \(txtType.identifier)")
+                    savePanel.allowedContentTypes = [txtType]
+                } else {
+                    print("Falling back to allowedFileTypes for txt")
+                    savePanel.allowedFileTypes = ["txt"]
+                }
             case "rtf":
-                savePanel.allowedContentTypes = [UTType.rtf]
+                if let rtfType = UTType(filenameExtension: "rtf") {
+                    print("Using UTType for rtf: \(rtfType.identifier)")
+                    savePanel.allowedContentTypes = [rtfType]
+                } else {
+                    print("Falling back to allowedFileTypes for rtf")
+                    savePanel.allowedFileTypes = ["rtf"]
+                }
             case "doc":
                 if let docType = UTType(filenameExtension: "doc") {
+                    print("Using UTType for doc: \(docType.identifier)")
                     savePanel.allowedContentTypes = [docType]
                 } else {
-                    // Use a more generic type as fallback
-                    savePanel.allowedContentTypes = [UTType.text]
+                    print("Falling back to allowedFileTypes for doc")
+                    savePanel.allowedFileTypes = ["doc"]
                 }
             default:
-                savePanel.allowedContentTypes = [UTType.plainText]
+                if let txtType = UTType(filenameExtension: "txt") {
+                    print("Using UTType for default txt: \(txtType.identifier)")
+                    savePanel.allowedContentTypes = [txtType]
+                } else {
+                    print("Falling back to allowedFileTypes for default txt")
+                    savePanel.allowedFileTypes = ["txt"]
+                }
             }
         } else {
             // Fallback for older macOS versions
             print("Using older macOS API with allowedFileTypes")
-            // Try to use UTType if available
-            if #available(macOS 11.0, *) {
-                if let utType = UTType(filenameExtension: fileExtension) {
-                    savePanel.allowedContentTypes = [utType]
-                } else {
-                    // Last resort fallback
-                    savePanel.allowedFileTypes = [fileExtension]
-                }
-            } else {
-                savePanel.allowedFileTypes = [fileExtension]
-            }
+            savePanel.allowedFileTypes = [fileExtension]
         }
         
         savePanel.canCreateDirectories = true
@@ -944,16 +791,7 @@ class ClipboardItemCard: NSView {
         } else {
             // Fallback for older macOS versions
             print("Using older macOS API with allowedFileTypes")
-            // Try to use UTType if available
-            if #available(macOS 11.0, *) {
-                if fileType == .png {
-                    savePanel.allowedContentTypes = [UTType.png]
-                } else {
-                    savePanel.allowedContentTypes = [UTType.jpeg]
-                }
-            } else {
-                savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
-            }
+            savePanel.allowedFileTypes = fileType == .png ? ["png"] : ["jpg", "jpeg"]
         }
         savePanel.canCreateDirectories = true
         savePanel.isExtensionHidden = false
@@ -1013,10 +851,6 @@ class ClipboardItemCard: NSView {
     }
     
     @objc private func viewDoubleClicked() {
-        // Get the current event and its click count
-        let clickCount = NSApp.currentEvent?.clickCount ?? 0
-        print("viewDoubleClicked called with clickCount: \(clickCount)")
-        
         // Prevent event propagation to avoid beep sound
         NSApp.preventWindowOrdering()
         
@@ -1026,24 +860,17 @@ class ClipboardItemCard: NSView {
         // First, notify that this card was clicked to update selection
         NotificationCenter.default.post(name: NSNotification.Name("CardClicked"), object: item.id)
         
-        print("Double-click detected on item: \(item.id)")
-        
         // For double-click, we want to edit text or view image, not paste
         if item.isImage {
             // Directly call the method to view the image
-            print("Opening image preview for item: \(item.id)")
             viewImageClicked()
         } else {
             // Directly call the method to edit the text
-            print("Opening edit dialog for item: \(item.id)")
             editItemClicked()
         }
         
         // Prevent the single-click action from being triggered
         NSApp.discardEvents(matching: .leftMouseUp, before: nil)
-        
-        // Ensure we don't process any more events for this double-click
-        NSApp.discardEvents(matching: .leftMouseDown, before: nil)
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -1051,14 +878,10 @@ class ClipboardItemCard: NSView {
         
         // Check if this is for a specific button
         if let userInfo = event.trackingArea?.userInfo as? [String: String],
-           let buttonType = userInfo["button"] {
-            // This is for a specific button
+           let buttonType = userInfo["button"], buttonType == "save" {
+            // This is for the save button
             if let button = event.trackingArea?.owner as? NSButton {
-                if buttonType == "save" {
-                    button.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
-                } else if buttonType == "paste" {
-                    button.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.2).cgColor
-                }
+                button.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
             }
             return
         }
@@ -1087,8 +910,8 @@ class ClipboardItemCard: NSView {
     override func mouseExited(with event: NSEvent) {
         // Check if this is for a specific button
         if let userInfo = event.trackingArea?.userInfo as? [String: String],
-           let _ = userInfo["button"] {
-            // This is for a specific button
+           let buttonType = userInfo["button"], buttonType == "save" {
+            // This is for the save button
             if let button = event.trackingArea?.owner as? NSButton {
                 button.layer?.backgroundColor = NSColor.clear.cgColor
             }
@@ -1137,217 +960,10 @@ class ClipboardItemCard: NSView {
             layer?.borderWidth = 0.0
         }
     }
-    
-    // Override mouseDown to better handle click events
-    override func mouseDown(with event: NSEvent) {
-        // Get the click count
-        let clickCount = event.clickCount
-        print("mouseDown detected with clickCount: \(clickCount)")
-        
-        // Handle based on click count
-        if clickCount >= 2 {
-            // This is a double-click or more
-            print("Double-click detected in mouseDown for item: \(item.id)")
-            viewDoubleClicked()
-        } else {
-            // This is a single click
-            viewClicked()
-        }
-        
-        // Let the event propagate to other handlers
-        super.mouseDown(with: event)
-    }
 }
 
-// Simple EditableTextView class for rich text editing
+// Add this class before the HistoryWindowController class
 class EditableTextView: NSTextView {
-    // Add properties for smooth scrolling
-    private var isScrolling = false
-    private var scrollTimer: Timer?
-    private var targetScrollPosition: CGPoint?
-    private var scrollAnimationDuration: TimeInterval = 0.3
-    
-    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
-        super.init(frame: frameRect, textContainer: container)
-        setupTextColor()
-        setupAppearanceObserver()
-        setupTextContainer()
-        setupScrollingBehavior()
-    }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupTextColor()
-        setupAppearanceObserver()
-        setupTextContainer()
-        setupScrollingBehavior()
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-        scrollTimer?.invalidate()
-    }
-    
-    private func setupAppearanceObserver() {
-        // Register for appearance change notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(effectiveAppearanceDidChange),
-            name: NSWindow.didChangeBackingPropertiesNotification,
-            object: nil
-        )
-        
-        // Also observe effective appearance changes
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(effectiveAppearanceDidChange),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-    }
-    
-    @objc private func effectiveAppearanceDidChange() {
-        updateTextColorForEntireText()
-    }
-    
-    // Add method to set up smooth scrolling behavior
-    private func setupScrollingBehavior() {
-        // Enable smooth scrolling
-        enclosingScrollView?.scrollsDynamically = true
-        
-        // Set scroll elasticity
-        enclosingScrollView?.hasVerticalScroller = true
-        enclosingScrollView?.hasHorizontalScroller = false
-        enclosingScrollView?.autohidesScrollers = true
-        
-        // Set scroll view appearance
-        enclosingScrollView?.scrollerStyle = .overlay
-        enclosingScrollView?.scrollerKnobStyle = .light
-        
-        // Enable responsive scrolling
-        enclosingScrollView?.usesPredominantAxisScrolling = true
-        
-        // Set content insets for better appearance
-        textContainerInset = NSSize(width: 8, height: 8)
-    }
-    
-    // Override scrollWheel to implement smooth scrolling
-    override func scrollWheel(with event: NSEvent) {
-        guard let scrollView = enclosingScrollView else {
-            super.scrollWheel(with: event)
-            return
-        }
-        
-        // For trackpad scrolling (with phase info), use the default behavior
-        if event.phase != [] || event.momentumPhase != [] {
-            super.scrollWheel(with: event)
-            return
-        }
-        
-        // For mouse wheel scrolling, implement smooth scrolling
-        let deltaY = event.scrollingDeltaY
-        
-        // Calculate target scroll position
-        let currentOffset = scrollView.contentView.bounds.origin
-        let targetY = max(0, currentOffset.y + deltaY)
-        let maxY = max(0, scrollView.documentView!.frame.height - scrollView.contentView.bounds.height)
-        let clampedTargetY = min(targetY, maxY)
-        
-        // Set target position
-        targetScrollPosition = CGPoint(x: currentOffset.x, y: clampedTargetY)
-        
-        // If not already scrolling, start the animation
-        if !isScrolling {
-            isScrolling = true
-            
-            // Invalidate existing timer if any
-            scrollTimer?.invalidate()
-            
-            // Create a new timer for smooth animation
-            scrollTimer = Timer.scheduledTimer(timeInterval: 1/60, target: self, selector: #selector(updateScroll), userInfo: nil, repeats: true)
-            
-            // Add the timer to the current run loop
-            RunLoop.current.add(scrollTimer!, forMode: .common)
-        }
-        
-        // We can't modify the event's phase, so we'll just handle it ourselves
-        // and not call super.scrollWheel to prevent default scrolling
-    }
-    
-    // Method to update scroll position during animation
-    @objc private func updateScroll() {
-        guard let scrollView = enclosingScrollView,
-              let targetPosition = targetScrollPosition else {
-            isScrolling = false
-            scrollTimer?.invalidate()
-            return
-        }
-        
-        // Get current position
-        let currentPosition = scrollView.contentView.bounds.origin
-        
-        // Calculate step size (easing function)
-        let step = CGPoint(
-            x: (targetPosition.x - currentPosition.x) * 0.3,
-            y: (targetPosition.y - currentPosition.y) * 0.3
-        )
-        
-        // Check if we're close enough to target
-        if abs(step.y) < 0.5 {
-            // We've reached the target (or close enough)
-            scrollView.contentView.scroll(to: targetPosition)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            
-            // Clean up
-            isScrolling = false
-            targetScrollPosition = nil
-            scrollTimer?.invalidate()
-            return
-        }
-        
-        // Update position
-        let newPosition = CGPoint(
-            x: currentPosition.x + step.x,
-            y: currentPosition.y + step.y
-        )
-        
-        // Apply scroll
-        scrollView.contentView.scroll(to: newPosition)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-    }
-    
-    private func setupTextColor() {
-        // Set the default text color based on appearance
-        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let textColor = isDarkMode ? NSColor.white : NSColor.black
-        let backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
-        
-        self.textColor = textColor
-        self.backgroundColor = backgroundColor
-        
-        // Update typing attributes
-        var attributes = self.typingAttributes
-        attributes[.foregroundColor] = textColor
-        self.typingAttributes = attributes
-        
-        // Apply to any existing text, but preserve existing color attributes
-        if let textStorage = self.textStorage, textStorage.length > 0 {
-            let fullRange = NSRange(location: 0, length: textStorage.length)
-            
-            // Only apply color to text that doesn't have a color attribute
-            textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                if value == nil {
-                    // Only apply color if there isn't already a color attribute
-                    textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                }
-            }
-            
-            // Force layout update
-            self.layoutManager?.ensureLayout(for: self.textContainer!)
-            self.needsDisplay = true
-        }
-    }
-    
     override func keyDown(with event: NSEvent) {
         // Check if it's Return/Enter key
         if event.keyCode == 36 {
@@ -1357,74 +973,8 @@ class EditableTextView: NSTextView {
             super.keyDown(with: event)
         }
     }
-    
-    // Override to ensure text color is maintained when typing
-    override func didChangeText() {
-        super.didChangeText()
-        
-        // Apply the appropriate text color based on appearance
-        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let textColor = isDarkMode ? NSColor.white : NSColor.black
-        
-        // Get the typing attributes and update the foreground color
-        let typingAttributes = self.typingAttributes
-        var updatedAttributes = typingAttributes
-        
-        // Only set foreground color if it's not already set
-        if typingAttributes[.foregroundColor] == nil {
-            updatedAttributes[.foregroundColor] = textColor
-            self.typingAttributes = updatedAttributes
-        }
-    }
-    
-    // Method to update text color for the entire text
-    func updateTextColorForEntireText() {
-        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let textColor = isDarkMode ? NSColor.white : NSColor.black
-        let backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
-        
-        // Update background color
-        self.backgroundColor = backgroundColor
-        
-        // Update text color for all text, but preserve other attributes
-        if let textStorage = self.textStorage, textStorage.length > 0 {
-            let fullRange = NSRange(location: 0, length: textStorage.length)
-            
-            // Instead of applying color to everything, only apply to text that doesn't have a color
-            textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                if value == nil {
-                    // Only apply color if there isn't already a color attribute
-                    textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                }
-            }
-            
-            // Force layout update
-            self.layoutManager?.ensureLayout(for: self.textContainer!)
-            self.needsDisplay = true
-        }
-        
-        // Update typing attributes for new text
-        var attributes = self.typingAttributes
-        attributes[.foregroundColor] = textColor
-        self.typingAttributes = attributes
-    }
-    
-    private func setupTextContainer() {
-        // Ensure text container is properly configured
-        if let container = self.textContainer {
-            container.widthTracksTextView = true
-            container.containerSize = NSSize(width: self.bounds.width, height: CGFloat.greatestFiniteMagnitude)
-        }
-        
-        // Ensure layout manager is properly configured
-        if let layoutManager = self.layoutManager {
-            layoutManager.allowsNonContiguousLayout = false
-            layoutManager.usesFontLeading = true
-        }
-    }
 }
 
-// Add this class before the HistoryWindowController class
 class HistoryWindowController: NSWindowController {
     private var items: [ClipboardItem] = []
     private var filteredItems: [ClipboardItem] = [] // Add filtered items array
@@ -1441,10 +991,6 @@ class HistoryWindowController: NSWindowController {
     private var selectedItemIndex: Int = 0 // Track the currently selected item
     private var selectedCard: ClipboardItemCard? // Track the currently selected card
     private var targetApplication: NSRunningApplication? // Store the target application
-    private var currentlyEditingItemId: UUID? // Track the item being edited
-    private var nextItemToFocusAfterDeletion: UUID? // Track the next item to focus on after deletion
-    private var currentEditTextView: EditableTextView? // Track the current text view being edited
-    private var keyEventMonitor: Any?
     
     init(items: [ClipboardItem]) {
         print("HistoryWindowController init with \(items.count) items")
@@ -1524,9 +1070,6 @@ class HistoryWindowController: NSWindowController {
         
         // Register for edit item notifications
         NotificationCenter.default.addObserver(self, selector: #selector(editClipboardItem(_:)), name: NSNotification.Name("EditClipboardItem"), object: nil)
-        
-        // Register for delete item notifications
-        NotificationCenter.default.addObserver(self, selector: #selector(handleItemDeletion(_:)), name: NSNotification.Name("DeleteClipboardItem"), object: nil)
         
         // Set up keyboard event monitoring
         setupKeyboardMonitoring()
@@ -1641,9 +1184,6 @@ class HistoryWindowController: NSWindowController {
     }
     
     @objc private func tabChanged(_ sender: NSSegmentedControl) {
-        // Store the current selected item ID if any
-        let currentSelectedItemId = selectedCard?.item.id
-        
         currentTab = sender.selectedSegment
         
         // Update window title based on selected tab
@@ -1660,39 +1200,12 @@ class HistoryWindowController: NSWindowController {
             clearAllButton.title = "Unpin all"
         }
         
-        // Update the filtered items
+        // Update the card views
         updateFilteredItems()
-        
-        // Get items to display based on current tab and search filter
-        let displayItems: [ClipboardItem]
-        if searchText.isEmpty {
-            // No search filter, use tab filter only
-            if currentTab == 0 {
-                displayItems = items
-            } else {
-                displayItems = items.filter { $0.isPinned }
-            }
-        } else {
-            // Use filtered items
-            if currentTab == 0 {
-                displayItems = filteredItems
-            } else {
-                displayItems = filteredItems.filter { $0.isPinned }
-            }
-        }
-        
-        // Check if the currently selected item is visible in the new tab
-        if let currentSelectedItemId = currentSelectedItemId,
-           displayItems.contains(where: { $0.id == currentSelectedItemId }) {
-            // If the currently selected item is visible in the new tab, preserve its selection
-            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-        } else {
-            // Otherwise, just update normally
-            updateCardViews()
-        }
+        updateCardViews()
     }
     
-    private func updateCardViews(preserveSelectedItemId: UUID? = nil) {
+    private func updateCardViews() {
         // Remove existing cards
         containerView.subviews.forEach { $0.removeFromSuperview() }
         cardViews.removeAll()
@@ -1719,39 +1232,9 @@ class HistoryWindowController: NSWindowController {
             }
         }
         
-        // Determine which item ID to preserve
-        var itemIdToPreserve: UUID? = nil
-        
-        // First priority: explicitly provided ID (from direct calls)
-        if let preserveId = preserveSelectedItemId, 
-           displayItems.contains(where: { $0.id == preserveId }) {
-            itemIdToPreserve = preserveId
-        } 
-        // Second priority: currently editing item
-        else if let editingId = currentlyEditingItemId,
-                displayItems.contains(where: { $0.id == editingId }) {
-            itemIdToPreserve = editingId
-        }
-        // Third priority: currently selected item
-        else if let currentId = selectedCard?.item.id,
-                displayItems.contains(where: { $0.id == currentId }) {
-            itemIdToPreserve = currentId
-        }
-        
-        // Update the selected index based on the item to preserve
-        if let idToPreserve = itemIdToPreserve,
-           let preserveIndex = displayItems.firstIndex(where: { $0.id == idToPreserve }) {
-            // Only update if different to avoid unnecessary jumps
-            if selectedItemIndex != preserveIndex {
-                selectedItemIndex = preserveIndex
-            }
-        } else if selectedCard == nil {
-            // Only reset to the first item if we don't have a current selection
-            selectedItemIndex = 0
-        }
-        
-        // Clear the selected card reference since we're rebuilding the view
-        selectedCard = nil as ClipboardItemCard?
+        // Reset selected item index to the most recent item (top item)
+        selectedItemIndex = 0
+        selectedCard = nil
         
         // Calculate container height based on number of items and preferences
         let containerHeight = CGFloat(displayItems.count * prefs.cardHeight + (displayItems.count - 1) * prefs.cardSpacing + 20)
@@ -1761,16 +1244,13 @@ class HistoryWindowController: NSWindowController {
         var yPosition = Int(containerView.frame.height) - prefs.cardHeight - 10
         
         for (index, item) in displayItems.enumerated() {
-            // Add safety check for item content
-            guard item.content.count > 0 || item.isImage else { continue }
-            
             let cardFrame = NSRect(x: 20, y: CGFloat(yPosition), width: containerView.bounds.width - 40, height: CGFloat(prefs.cardHeight))
             let card = ClipboardItemCard(frame: cardFrame, item: item) { [weak self] selectedItem in
                 self?.itemSelected(selectedItem)
             }
             card.autoresizingMask = [NSView.AutoresizingMask.width]
             
-            // Set search text for highlighting - use empty string if nil to avoid crashes
+            // Set search text for highlighting
             card.searchText = searchText
             
             // Set selection state for the card
@@ -1791,21 +1271,13 @@ class HistoryWindowController: NSWindowController {
             window?.title = searchText.isEmpty ? "Pinned Clipboard Items (\(displayItems.count) items)" : "Pinned Search Results (\(displayItems.count) items)"
         }
         
-        // Scroll to selected item instead of top if we have a selection
-        if selectedCard != nil {
-            scrollToSelectedItem()
-        } else {
-            // Scroll to top after updating
-            scrollToTop()
-        }
+        // Scroll to top after updating
+        scrollToTop()
     }
     
     @objc private func preferencesChanged() {
         // Update UI based on new preferences
         guard let window = self.window else { return }
-        
-        // Store the current selected item ID if any
-        let currentSelectedItemId = selectedCard?.item.id
         
         // Get preferences
         let prefs = Preferences.shared
@@ -1849,13 +1321,8 @@ class HistoryWindowController: NSWindowController {
             cardView.applyPreferences()
         }
         
-        // Update card views layout with preserved selection if possible
-        if let currentSelectedItemId = currentSelectedItemId,
-           items.contains(where: { $0.id == currentSelectedItemId }) {
-            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-        } else {
-            updateCardViews()
-        }
+        // Update card views layout
+        updateCardViews()
     }
     
     private func scrollToTop() {
@@ -1870,51 +1337,12 @@ class HistoryWindowController: NSWindowController {
     @objc private func historyUpdated() {
         // Get updated history
         if let appDelegate = NSApp.delegate as? AppDelegate {
-            // Store the current selected item ID if any
-            let currentSelectedItemId = selectedCard?.item.id
-            
-            // Update the items list
             items = appDelegate.getClipboardHistory()
             
             // Update filtered items based on current search text
-            // But don't call updateCardViews here, as it will be called below
-            if !searchText.isEmpty {
-                let searchLower = searchText.lowercased()
-                filteredItems = items.filter { item in
-                    if currentTab == 1 && !item.isPinned {
-                        return false
-                    }
-                    
-                    if item.isImage {
-                        // For images, we can only search by timestamp or other metadata
-                        return true
-                    } else {
-                        // Add safety check for empty content
-                        guard !item.content.isEmpty else { return false }
-                        return item.content.lowercased().contains(searchLower)
-                    }
-                }
-            } else {
-                filteredItems = items
-            }
+            updateFilteredItems()
             
-            // Check if we have a next item to focus on after deletion
-            if let nextItemId = nextItemToFocusAfterDeletion, 
-               items.contains(where: { $0.id == nextItemId }) {
-                // If we have a next item to focus on and it exists, focus on it
-                updateCardViews(preserveSelectedItemId: nextItemId)
-                // Clear the next item to focus on
-                nextItemToFocusAfterDeletion = nil
-            }
-            // If we don't have a next item to focus on, use the normal logic
-            else if let currentSelectedItemId = currentSelectedItemId,
-               items.contains(where: { $0.id == currentSelectedItemId }) {
-                // If the currently selected item still exists, preserve its selection
-                updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-            } else {
-                // Otherwise, just update normally
-                updateCardViews()
-            }
+            updateCardViews()
         }
     }
     
@@ -1924,77 +1352,34 @@ class HistoryWindowController: NSWindowController {
     }
     
     private func copyItemToClipboard(_ item: ClipboardItem) {
-        print("===== HISTORY WINDOW COPY OPERATION START =====")
-        print("Item selected: \(item.content)")
-        print("Item ID: \(item.id)")
-        print("Item isRichText: \(item.isRichText)")
-        if item.isRichText {
-            print("Item richTextData size: \(item.richTextData?.count ?? 0) bytes")
-        }
+        print("Item selected: \(item.content.prefix(30))...")
         
         // Get the app delegate
         if let appDelegate = NSApp.delegate as? AppDelegate {
-            // Store the target application before closing the window
-            let targetApp = self.targetApplication
-            print("Target application: \(targetApp?.localizedName ?? "Unknown")")
-            
-            // Always close the window
-            if let window = self.window {
-                print("Closing window after copying")
+            // Close the window first
+            if let window = self.window, Preferences.shared.closeAfterCopy {
                 window.close()
-            } else {
-                print("Cannot close window (window is nil)")
+            }
+            
+            // Reactivate the target application before copying/pasting
+            if let targetApp = self.targetApplication {
+                print("Reactivating target app: \(targetApp.localizedName ?? "Unknown")")
+                targetApp.activate(options: .activateIgnoringOtherApps)
+                
+                // Small delay to ensure the app is activated
+                Thread.sleep(forTimeInterval: 0.1)
             }
             
             // Find the index of the item
             let itemIndex = items.firstIndex(where: { $0.id == item.id }) ?? 0
-            print("Found item at index: \(itemIndex)")
             
             // Create a menu item with the appropriate tag
             let menuItem = NSMenuItem()
             menuItem.tag = itemIndex
             
-            // Copy the item to clipboard
-            print("Calling AppDelegate.copyItemToClipboard")
+            // Copy the item to clipboard and paste if needed
             appDelegate.copyItemToClipboard(menuItem)
-            
-            // Reactivate the target application with a more robust approach
-            if let targetApp = targetApp {
-                print("Reactivating target app: \(targetApp.localizedName ?? "Unknown")")
-                
-                // Use a slightly longer delay to ensure the window is fully closed
-                // and the clipboard operation is complete before activating the target app
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    print("Activating target application after delay")
-                    // Activate the target application with options to bring it to front
-                    if #available(macOS 14.0, *) {
-                        // In macOS 14+, just use activate() as ignoringOtherApps has no effect
-                        targetApp.activate(options: .activateAllWindows)
-                    } else {
-                        // For older macOS versions, use the previous API
-                        targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
-                    }
-                    
-                    // Give the app time to fully activate and restore focus
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        // If auto-paste is enabled, simulate paste keystroke
-                        if Preferences.shared.autoPaste {
-                            print("Auto-paste is enabled, simulating paste keystroke")
-                            print("isRichText: \(item.isRichText), hasMultipleFormats: \(item.hasMultipleFormats), isImage: \(item.isImage)")
-                            // Use the PasteManager directly for better control
-                            PasteManager.shared.paste(isRichText: item.isRichText || item.hasMultipleFormats, isImage: item.isImage)
-                        } else {
-                            print("Auto-paste is disabled, not simulating paste keystroke")
-                        }
-                    }
-                }
-            } else {
-                print("No target application to reactivate")
-            }
-        } else {
-            print("ERROR: Could not get AppDelegate")
         }
-        print("===== HISTORY WINDOW COPY OPERATION END =====")
     }
     
     @objc private func clearAllClicked() {
@@ -2051,14 +1436,8 @@ class HistoryWindowController: NSWindowController {
             self.window?.makeFirstResponder(self.containerView)
         }
         
-        // Remove any existing monitors to prevent duplicates
-        if let existingMonitor = keyEventMonitor {
-            NSEvent.removeMonitor(existingMonitor)
-            keyEventMonitor = nil
-        }
-        
         // Set up local event monitor for keyboard events
-        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+        NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self = self else { return event }
             
             // Handle key events
@@ -2135,44 +1514,30 @@ class HistoryWindowController: NSWindowController {
         
         switch keyCode {
         case 125: // Down arrow
-            if !displayItems.isEmpty {
+            if selectedItemIndex < displayItems.count - 1 {
                 // Deselect current item
                 updateCardSelection(at: selectedItemIndex, isSelected: false)
                 
-                if selectedItemIndex < displayItems.count - 1 {
-                    // Select next item
-                    selectedItemIndex += 1
-                } else {
-                    // Wrap around to the top when at the bottom
-                    selectedItemIndex = 0
-                }
-                
-                // Select the new item
+                // Select next item
+                selectedItemIndex += 1
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
                 
                 // Ensure the selected item is visible
-                scrollToSelectedItem(isWrappingAround: selectedItemIndex == 0)
+                scrollToSelectedItem()
             }
             return true
             
         case 126: // Up arrow
-            if !displayItems.isEmpty {
+            if selectedItemIndex > 0 {
                 // Deselect current item
                 updateCardSelection(at: selectedItemIndex, isSelected: false)
                 
-                if selectedItemIndex > 0 {
-                    // Select previous item
-                    selectedItemIndex -= 1
-                } else {
-                    // Wrap around to the bottom when at the top
-                    selectedItemIndex = displayItems.count - 1
-                }
-                
-                // Select the new item
+                // Select previous item
+                selectedItemIndex -= 1
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
                 
                 // Ensure the selected item is visible
-                scrollToSelectedItem(isWrappingAround: selectedItemIndex == displayItems.count - 1)
+                scrollToSelectedItem()
             }
             return true
             
@@ -2195,130 +1560,6 @@ class HistoryWindowController: NSWindowController {
             
             // Otherwise close the window
             window?.close()
-            return true
-            
-        case 49: // Space key
-            if !displayItems.isEmpty && selectedItemIndex < displayItems.count {
-                let item = displayItems[selectedItemIndex]
-                
-                // Show preview alert with the item's content
-                let alert = NSAlert()
-                alert.messageText = "Preview"
-                
-                // Log that space key was pressed for debugging
-                print("Space key pressed - showing preview for item: \(item.id)")
-                
-                if item.isImage {
-                    // For images, show dimensions or a placeholder message
-                    if let image = item.getImage() {
-                        alert.informativeText = "Image: \(Int(image.size.width))x\(Int(image.size.height)) pixels"
-                    } else {
-                        alert.informativeText = "Image preview not available"
-                    }
-                } else {
-                    // Create a scroll view for the preview content
-                    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-                    scrollView.hasVerticalScroller = true
-                    scrollView.hasHorizontalScroller = false
-                    scrollView.autohidesScrollers = true
-                    scrollView.borderType = .bezelBorder
-                    
-                    // Enable smooth scrolling
-                    scrollView.scrollsDynamically = true
-                    scrollView.usesPredominantAxisScrolling = true
-                    scrollView.scrollerStyle = .overlay
-                    
-                    // Create a text view for the content
-                    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 390, height: 200))
-                    textView.isEditable = false
-                    textView.isSelectable = true
-                    textView.font = NSFont.systemFont(ofSize: 12)
-                    textView.textContainer?.containerSize = NSSize(width: 390, height: CGFloat.greatestFiniteMagnitude)
-                    textView.textContainer?.widthTracksTextView = true
-                    textView.isHorizontallyResizable = false
-                    textView.isVerticallyResizable = true
-                    textView.autoresizingMask = [.width]
-                    
-                    // Add padding around text
-                    textView.textContainerInset = NSSize(width: 10, height: 10)
-                    
-                    // Set background color based on appearance
-                    let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    textView.backgroundColor = isDark ? NSColor(white: 0.15, alpha: 1.0) : NSColor(white: 0.98, alpha: 1.0)
-                    
-                    if item.isRichText, let richTextData = item.richTextData {
-                        // Handle rich text content
-                        do {
-                            let attributedString = try NSAttributedString(
-                                data: richTextData,
-                                options: [.documentType: NSAttributedString.DocumentType.rtf],
-                                documentAttributes: nil
-                            )
-                            
-                            // Create a mutable copy to ensure we can modify attributes if needed
-                            let mutableString = NSMutableAttributedString(attributedString: attributedString)
-                            
-                            // Check if the text has any color attributes
-                            let fullRange = NSRange(location: 0, length: mutableString.length)
-                            var hasColorAttribute = false
-                            mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                                if value != nil {
-                                    hasColorAttribute = true
-                                }
-                            }
-                            
-                            // If no explicit color is set, apply the current text color
-                            if !hasColorAttribute {
-                                print("No color attribute found, applying explicit text color")
-                                // Use white color to ensure visibility in RTF documents
-                                let textColor = NSColor.white
-                                mutableString.addAttribute(.foregroundColor, value: textColor, range: fullRange)
-                            }
-                            
-                            textView.textStorage?.setAttributedString(mutableString)
-                        } catch {
-                            print("Error displaying rich text: \(error)")
-                            // Fallback to plain text if there's an error
-                            textView.string = item.content
-                            // Ensure text color is maintained for plain text fallback
-                            textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-                            // Force layout and display update
-                            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                            textView.needsDisplay = true
-                            print("Falling back to plain text due to error")
-                        }
-                    } else {
-                        // Handle plain text content
-                        textView.string = item.content
-                        // Set text color for plain text
-                        textView.textColor = isDark ? NSColor.white : NSColor.black
-                    }
-                    
-                    scrollView.documentView = textView
-                    
-                    // Make sure the text view fills the scroll view
-                    textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: scrollView.contentSize.height)
-                    textView.minSize = NSSize(width: 0, height: 0)
-                    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-                    textView.isVerticallyResizable = true
-                    textView.isHorizontallyResizable = false
-                    textView.autoresizingMask = [.width]
-                    
-                    // Set the scroll view as the accessory view
-                    alert.accessoryView = scrollView
-                }
-                
-                alert.addButton(withTitle: "Close")
-                alert.window.minSize = NSSize(width: 400, height: 300) // Set minimum size for better readability
-                
-                // Set alert appearance to match system
-                alert.window.appearance = NSApp.effectiveAppearance
-                
-                alert.beginSheetModal(for: self.window!) { _ in
-                    // Ensure focus returns to the window after closing the preview
-                    self.window?.makeFirstResponder(self.containerView)
-                }
-            }
             return true
             
         case 3: // F key
@@ -2378,7 +1619,7 @@ class HistoryWindowController: NSWindowController {
                     
                     // Clear reference if this was the selected card
                     if selectedCard == card {
-                        selectedCard = nil as ClipboardItemCard?
+                        selectedCard = nil
                     }
                 }
                 break
@@ -2386,61 +1627,14 @@ class HistoryWindowController: NSWindowController {
         }
     }
     
-    private func scrollToSelectedItem(isWrappingAround: Bool = false) {
+    private func scrollToSelectedItem() {
         guard let selectedCard = selectedCard else { return }
         
         // Convert card frame to scroll view coordinates
         let cardFrameInScrollView = containerView.convert(selectedCard.frame, to: scrollView.contentView)
         
-        // Check if the card is already visible in the current view
-        let isCardVisible = scrollView.contentView.visibleRect.intersects(cardFrameInScrollView)
-        
-        if isWrappingAround {
-            // For wrap-around scrolling, create a more sophisticated animation
-            // First, determine if we're wrapping from top to bottom or bottom to top
-            let isScrollingToBottom = selectedItemIndex == (searchText.isEmpty ? 
-                (currentTab == 0 ? items.count - 1 : items.filter { $0.isPinned }.count - 1) : 
-                (currentTab == 0 ? filteredItems.count - 1 : filteredItems.filter { $0.isPinned }.count - 1))
-            
-            // Create a two-step animation for smoother transition
-            NSAnimationContext.runAnimationGroup({ context in
-                // First step: quick fade out
-                context.duration = 0.15
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                
-                // If scrolling to bottom, first scroll a bit more down (beyond content)
-                // If scrolling to top, first scroll a bit more up (beyond content)
-                let intermediatePoint: NSPoint
-                if isScrollingToBottom {
-                    // Scrolling to bottom - first go a bit beyond the top
-                    intermediatePoint = NSPoint(x: 0, y: containerView.frame.height + 50)
-                } else {
-                    // Scrolling to top - first go a bit beyond the bottom
-                    intermediatePoint = NSPoint(x: 0, y: -50)
-                }
-                
-                scrollView.contentView.animator().scroll(intermediatePoint)
-            }, completionHandler: {
-                // Second step: scroll to the actual target with a nice animation
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.25
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    self.scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
-                }, completionHandler: nil)
-            })
-        } else if !isCardVisible {
-            // Only scroll if the card is not already visible
-            // Regular scrolling with simple animation
-            NSAnimationContext.runAnimationGroup({ context in
-                // Set animation duration - adjust this value for desired smoothness
-                context.duration = 0.2
-                // Use ease-in-ease-out timing function for smoother animation
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                // Animate the scroll
-                scrollView.contentView.animator().scrollToVisible(cardFrameInScrollView)
-            }, completionHandler: nil)
-        }
-        // If the card is already visible, don't scroll at all
+        // Scroll to make the card visible
+        scrollView.contentView.scrollToVisible(cardFrameInScrollView)
     }
     
     @objc private func cardClicked(_ notification: Notification) {
@@ -2457,421 +1651,160 @@ class HistoryWindowController: NSWindowController {
         
         // Find the index of the clicked item
         if let index = displayItems.firstIndex(where: { $0.id == clickedItemId }) {
-            // If clicking on the same item that's already selected, we still need to
-            // update the selection state to ensure the card knows it's selected
-            if index == selectedItemIndex {
-                // Just ensure the card is marked as selected
+            // Deselect current item if different
+            if index != selectedItemIndex {
+                updateCardSelection(at: selectedItemIndex, isSelected: false)
+                
+                // Update selected index
+                selectedItemIndex = index
+                
+                // Select the new item
                 updateCardSelection(at: selectedItemIndex, isSelected: true)
-                return
             }
-            
-            // Deselect current item
-            updateCardSelection(at: selectedItemIndex, isSelected: false)
-            
-            // Update selected index
-            selectedItemIndex = index
-            
-            // Select the new item
-            updateCardSelection(at: selectedItemIndex, isSelected: true)
         }
     }
     
     @objc private func editClipboardItem(_ notification: Notification) {
-        print("===== EDIT ITEM START =====")
         // Get the item ID to edit
-        guard let itemId = notification.object as? UUID else {
-            print("Error: Invalid item ID in EditClipboardItem notification")
-            print("===== EDIT ITEM FAILED =====")
-            return
-        }
-        
-        // Find the item in the items array
-        guard let itemIndex = items.firstIndex(where: { $0.id == itemId }) else {
-            print("Error: Could not find item with ID \(itemId) in items array")
-            print("===== EDIT ITEM FAILED =====")
-            return
-        }
-        
-        // Set the currently editing item ID
-        currentlyEditingItemId = itemId
-        print("Starting to edit item with ID: \(itemId)")
+        guard let itemId = notification.object as? UUID,
+              let itemIndex = items.firstIndex(where: { $0.id == itemId }) else { return }
         
         let item = items[itemIndex]
-        print("Item content: \(item.content)")
-        print("Item isRichText: \(item.isRichText)")
-        if item.isRichText {
-            print("Item richTextData size: \(item.richTextData?.count ?? 0) bytes")
+        
+        // If it's an image, just show the image viewer instead of edit dialog
+        if item.isImage {
+            // Create a temporary file
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+            
+            do {
+                // Convert to PNG for viewing
+                if let image = item.getImage(),
+                   let tiffData = image.tiffRepresentation,
+                   let bitmapImage = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                    
+                    try pngData.write(to: tempFile)
+                    
+                    // Open with default application
+                    NSWorkspace.shared.open(tempFile)
+                }
+            } catch {
+                print("Error opening image: \(error)")
+            }
+            return
         }
         
-        // Ensure we're on the main thread for UI operations
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                print("Self is nil in async block")
-                print("===== EDIT ITEM FAILED =====")
-                return
-            }
-            
-            // If it's an image, just show the image viewer instead of edit dialog
-            if item.isImage {
-                print("Item is an image, opening in Preview")
-                // Create a temporary file
-                let tempDir = FileManager.default.temporaryDirectory
-                let tempFile = tempDir.appendingPathComponent("clipboard_image_\(item.id.uuidString).png")
+        // For text items, show the edit dialog
+        // Create an edit dialog
+        let alert = NSAlert()
+        alert.messageText = "Edit Clipboard Item"
+        alert.informativeText = "Modify the text below:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        
+        // Create a scroll view to contain the text view for long content
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .bezelBorder
+        
+        // Use a text view for better multiline editing
+        let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        
+        // Check if we have rich text data
+        if item.isRichText, let richTextData = item.richTextData {
+            do {
+                // Create attributed string from rich text data
+                let attributedString = try NSAttributedString(
+                    data: richTextData,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil
+                )
                 
-                do {
-                    // Convert to PNG for viewing
-                    if let image = item.getImage(),
-                       let tiffData = image.tiffRepresentation,
-                       let bitmapImage = NSBitmapImageRep(data: tiffData),
-                       let pngData = bitmapImage.representation(using: .png, properties: [:]) {
-                        
-                        try pngData.write(to: tempFile)
-                        
-                        // Ensure the app is activated before opening the file
-                        NSApp.activate(ignoringOtherApps: true)
-                        
-                        // Open with default application (Preview on macOS)
-                        NSWorkspace.shared.open(tempFile)
-                        
-                        print("Opening image in Preview: \(tempFile.path)")
-                    } else {
-                        print("Error: Could not create image data for preview")
-                    }
-                } catch {
-                    print("Error opening image: \(error)")
-                }
+                // Set the attributed string to the text view
+                textView.textStorage?.setAttributedString(attributedString)
                 
-                // Clear the currently editing item ID
-                self.currentlyEditingItemId = nil
-                print("===== EDIT ITEM COMPLETE (IMAGE) =====")
-                return
-            }
-            
-            print("Item is text, opening edit dialog")
-            // For text items, show the edit dialog
-            // Create an edit dialog
-            let alert = NSAlert()
-            alert.messageText = "Edit Clipboard Item"
-            alert.informativeText = "Modify the text below:"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Save")
-            alert.addButton(withTitle: "Cancel")
-            
-            // Create a scroll view to contain the text view for long content
-            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
-            scrollView.hasVerticalScroller = true
-            scrollView.hasHorizontalScroller = false
-            scrollView.autohidesScrollers = true
-            scrollView.borderType = .bezelBorder
-            
-            // Enable smooth scrolling
-            scrollView.scrollsDynamically = true
-            scrollView.usesPredominantAxisScrolling = true
-            scrollView.scrollerStyle = .overlay
-            
-            // Add a subtle background color
-            let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            scrollView.backgroundColor = isDarkMode ? NSColor(white: 0.15, alpha: 1.0) : NSColor(white: 0.98, alpha: 1.0)
-            
-            // Use a text view for better multiline editing
-            let textContainer = NSTextContainer(containerSize: NSSize(width: scrollView.frame.width, height: CGFloat.greatestFiniteMagnitude))
-            let layoutManager = NSLayoutManager()
-            let textStorage = NSTextStorage()
-            
-            layoutManager.addTextContainer(textContainer)
-            textStorage.addLayoutManager(layoutManager)
-            
-            let textView = EditableTextView(frame: NSRect(x: 0, y: 0, width: scrollView.frame.width, height: scrollView.frame.height), textContainer: textContainer)
-            
-            // Store the text view in a property so it can be accessed if needed
-            self.currentEditTextView = textView
-            
-            // Configure text view for rich text editing
-            textView.isEditable = true
-            textView.isSelectable = true
-            textView.isRichText = true  // Always enable rich text editing
-            textView.allowsUndo = true
-            textView.font = NSFont.systemFont(ofSize: 14)
-            
-            // Add padding around text
-            textView.textContainerInset = NSSize(width: 10, height: 10)
-            
-            // These settings are now handled when setting up the scroll view
-            // textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
-            // textView.textContainer?.widthTracksTextView = true
-            // textView.isHorizontallyResizable = false
-            // textView.isVerticallyResizable = true
-            // textView.autoresizingMask = [.width]
-            
-            // Set text color based on window appearance
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            textView.textColor = isDark ? .white : .black
-            
-            // Check if we have rich text data
-            if item.isRichText, let richTextData = item.richTextData {
-                print("Loading rich text data for editing")
-                do {
-                    // Create attributed string from rich text data
-                    let attributedString = try NSAttributedString(
-                        data: richTextData,
-                        options: [.documentType: NSAttributedString.DocumentType.rtf],
-                        documentAttributes: nil
-                    )
-                    
-                    print("Created attributed string from rich text data")
-                    print("Attributed string length: \(attributedString.length)")
-                    print("Attributed string plain text: \(attributedString.string)")
-                    
-                    // Set the attributed string to the text view
-                    textView.textStorage?.setAttributedString(attributedString)
-                    print("Loaded rich text data for editing")
-                    
-                    // Only apply text color to text that doesn't have color attributes
-                    if let textStorage = textView.textStorage {
-                        let fullRange = NSRange(location: 0, length: textStorage.length)
-                        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                        let textColor = isDarkMode ? NSColor.white : NSColor.black
-                        
-                        // Only apply color to text that doesn't have a color attribute
-                        textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                            if value == nil {
-                                // Only apply color if there isn't already a color attribute
-                                textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                            }
-                        }
-                    }
-                    
-                    // Force layout and display update
-                    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                    textView.needsDisplay = true
-                } catch {
-                    print("Error displaying rich text in editor: \(error)")
-                    // Fall back to plain text if there's an error
-                    textView.string = item.content
-                    // Ensure text color is maintained for plain text fallback
-                    textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-                    print("Falling back to plain text due to error")
-                }
-            } else {
-                // No rich text data, just set plain text
+                // Enable rich text editing
+                textView.isRichText = true
+            } catch {
+                print("Error displaying rich text in editor: \(error)")
+                // Fall back to plain text if there's an error
                 textView.string = item.content
-                // Ensure text color is maintained for plain text
-                textView.textColor = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-                // Force layout and display update
-                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                textView.needsDisplay = true
-                print("No rich text data, using plain text but enabling rich text editing")
+                textView.isRichText = false
             }
+        } else {
+            // No rich text data, just set plain text
+            textView.string = item.content
+            textView.isRichText = false
+        }
+        
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.textContainer?.containerSize = NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        
+        scrollView.documentView = textView
+        
+        alert.accessoryView = scrollView
+        
+        // Ensure alert appears on top of other applications
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.level = .floating
+        
+        // Show the dialog
+        let response = alert.runModal()
+        
+        if response == .alertFirstButtonReturn {
+            // User clicked Save
+            let updatedContent: String
+            var updatedRichTextData: Data? = nil
             
-            scrollView.documentView = textView
-            scrollView.hasVerticalScroller = true
-            scrollView.hasHorizontalScroller = false
-            scrollView.autohidesScrollers = true
-            
-            // Make sure the text view fills the scroll view
-            textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: scrollView.contentSize.height)
-            textView.minSize = NSSize(width: 0, height: 0)
-            textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-            textView.isVerticallyResizable = true
-            textView.isHorizontallyResizable = false
-            textView.autoresizingMask = [.width]
-            
-            // Set the scroll view as the accessory view
-            alert.accessoryView = scrollView
-            
-            // Ensure alert appears on top of other applications
-            NSApp.activate(ignoringOtherApps: true)
-            alert.window.level = .floating
-            
-            // Set window appearance to match system
-            alert.window.appearance = NSApp.effectiveAppearance
-            
-            // Add observer for appearance changes to update text color
-            let appearanceObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didChangeBackingPropertiesNotification,
-                object: alert.window,
-                queue: .main
-            ) { _ in
-                // Update text color when appearance changes, but preserve rich text attributes
-                if let textStorage = textView.textStorage {
-                    let fullRange = NSRange(location: 0, length: textStorage.length)
-                    let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    let textColor = isDarkMode ? NSColor.white : NSColor.black
-                    
-                    // Only apply color to text that doesn't have a color attribute
-                    textStorage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                        if value == nil {
-                            // Only apply color if there isn't already a color attribute
-                            textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                        }
-                    }
-                    
-                    // Update background color
-                    textView.backgroundColor = isDarkMode ? NSColor.darkGray : NSColor.white
-                    
-                    // Force layout update
-                    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                    textView.needsDisplay = true
-                }
-            }
-            
-            // Make the alert window larger for better editing
-            let window = alert.window
-            let currentFrame = window.frame
-            window.setFrame(NSRect(x: currentFrame.origin.x, y: currentFrame.origin.y - 100, width: 550, height: currentFrame.height + 100), display: true)
-            
-            // Show the dialog
-            let response = alert.runModal()
-            
-            // Remove the appearance observer
-            NotificationCenter.default.removeObserver(appearanceObserver)
-            
-            // Clear the current edit text view reference
-            defer {
-                self.currentEditTextView = nil
-            }
-            
-            if response == .alertFirstButtonReturn {
-                print("User clicked Save")
-                // User clicked Save
-                var updatedContent: String
-                var updatedRichTextData: Data? = nil
-                
-                // Always treat the content as rich text to preserve formatting
-                print("Processing rich text edit")
+            // Check if we're dealing with rich text
+            if textView.isRichText {
                 // Get the attributed string from the text view
                 let attributedString = textView.attributedString()
                 
-                // Create a mutable copy to ensure we can modify attributes if needed
-                let mutableString = NSMutableAttributedString(attributedString: attributedString)
-                
-                // Check if the text has any color attributes
-                let fullRange = NSRange(location: 0, length: mutableString.length)
-                var hasColorAttribute = false
-                mutableString.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                    if value != nil {
-                        hasColorAttribute = true
-                    }
-                }
-                
-                // If no explicit color is set, apply the current text color
-                if !hasColorAttribute {
-                    print("No color attribute found, applying explicit text color")
-                    // Use white color to ensure visibility in RTF documents
-                    let textColor = NSColor.white
-                    mutableString.addAttribute(.foregroundColor, value: textColor, range: fullRange)
-                }
-                
                 // Convert to plain text for the content field
-                updatedContent = mutableString.string
-                print("Updated content from rich text: \(updatedContent)")
+                updatedContent = attributedString.string
                 
                 // Convert to RTF data for storage
                 do {
-                    // Use RTF document type to preserve all formatting
-                    updatedRichTextData = try mutableString.data(
-                        from: NSRange(location: 0, length: mutableString.length),
+                    updatedRichTextData = try attributedString.data(
+                        from: NSRange(location: 0, length: attributedString.length),
                         documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
                     )
-                    print("Created rich text data from edited content")
-                    print("Rich text data size: \(updatedRichTextData?.count ?? 0) bytes")
-                    
-                    // Verify that the RTF data can be converted back to the same plain text
-                    let verifiedAttributedString = try NSAttributedString(
-                        data: updatedRichTextData!,
-                        options: [.documentType: NSAttributedString.DocumentType.rtf],
-                        documentAttributes: nil
-                    )
-                    let verifiedPlainText = verifiedAttributedString.string
-                    
-                    if verifiedPlainText != updatedContent {
-                        print("WARNING: Plain text from RTF doesn't match expected content")
-                        print("Expected: \(updatedContent)")
-                        print("Got from RTF: \(verifiedPlainText)")
-                        
-                        // Use the verified plain text to ensure consistency
-                        updatedContent = verifiedPlainText
-                        print("Updated content to match RTF data: \(updatedContent)")
-                    } else {
-                        print("Verified plain text matches RTF content")
-                    }
                 } catch {
                     print("Error converting rich text to data: \(error)")
-                    
-                    // Fallback to plain text if RTF conversion fails
-                    updatedContent = textView.string
-                    print("Falling back to plain text due to RTF conversion error: \(updatedContent)")
                 }
-                
-                // IMPORTANT: Store the item ID that's being edited in a local variable
-                // to ensure it's not affected by any other operations
-                let editingItemId = itemId
-                print("Saving edits for item with ID: \(editingItemId)")
-                
-                // First, register for the notification
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(self.handleItemUpdated(_:)),
-                    name: NSNotification.Name("ClipboardHistoryUpdated"),
-                    object: nil
-                )
-                
-                // Store the ID of the item being edited for use in the notification handler
-                self.currentlyEditingItemId = editingItemId
-                
-                // Update the item in the clipboard manager
-                var userInfo: [String: Any] = ["itemId": editingItemId, "content": updatedContent]
-                
-                // Always include rich text data if available
-                if let richTextData = updatedRichTextData {
-                    userInfo["richTextData"] = richTextData
-                    print("Including rich text data in update notification")
-                    print("Rich text data size: \(richTextData.count) bytes")
-                } else {
-                    print("No rich text data to include in update notification")
-                }
-                
-                print("Posting UpdateClipboardItem notification")
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("UpdateClipboardItem"),
-                    object: nil,
-                    userInfo: userInfo
-                )
-                print("===== EDIT ITEM COMPLETE (SAVED) =====")
             } else {
-                // User clicked Cancel, clear the currently editing item ID
-                self.currentlyEditingItemId = nil
-                print("User clicked Cancel")
-                print("===== EDIT ITEM CANCELLED =====")
+                // Just get the plain text
+                updatedContent = textView.string
             }
             
-            // Ensure we're still using accessory activation policy
-            NSApp.setActivationPolicy(.accessory)
+            // Update the item in the clipboard manager
+            var userInfo: [String: Any] = ["itemId": itemId, "content": updatedContent]
+            
+            // Add rich text data if available
+            if let richTextData = updatedRichTextData {
+                userInfo["richTextData"] = richTextData
+            }
+            
+            NotificationCenter.default.post(
+                name: NSNotification.Name("UpdateClipboardItem"),
+                object: nil,
+                userInfo: userInfo
+            )
         }
-    }
-    
-    @objc private func handleItemUpdated(_ notification: Notification) {
-        // Remove this observer immediately to prevent multiple calls
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSNotification.Name("ClipboardHistoryUpdated"),
-            object: nil
-        )
         
-        // Get the ID of the item that was being edited
-        if let editingItemId = currentlyEditingItemId {
-            print("History updated after editing item: \(editingItemId)")
-            
-            // Update the UI with the edited item selected
-            DispatchQueue.main.async { [weak self] in
-                // Focus on the item we just edited
-                print("Focusing on edited item with ID: \(editingItemId)")
-                self?.updateCardViews(preserveSelectedItemId: editingItemId)
-                
-                // Clear the currently editing item ID
-                self?.currentlyEditingItemId = nil
-            }
-        }
+        // Ensure we're still using accessory activation policy
+        NSApp.setActivationPolicy(.accessory)
     }
     
     @objc private func searchTextChanged(_ sender: NSSearchField) {
@@ -2883,42 +1816,15 @@ class HistoryWindowController: NSWindowController {
             searchText = ""
             filteredItems = items
             updateCardViews()
-            
-            // Hide any loading indicators
-            showSearchLoading(false)
             return
         }
         
         // Otherwise, debounce the search with a short delay
-        // Use a copy of the search field to avoid potential memory issues
-        let searchFieldCopy = sender
-        perform(#selector(performSearch(_:)), with: searchFieldCopy, afterDelay: 0.2)
+        perform(#selector(performSearch(_:)), with: sender, afterDelay: 0.2)
     }
     
     @objc private func performSearch(_ sender: NSSearchField) {
-        // Remove the unnecessary nil check for sender (it's non-optional)
-        
         let newSearchText = sender.stringValue
-        
-        // Add safety check for empty search text
-        if newSearchText.isEmpty {
-            // Store the current selected item ID if any
-            let currentSelectedItemId = selectedCard?.item.id
-            
-            searchText = ""
-            filteredItems = items
-            
-            // Preserve selection if possible
-            if let currentSelectedItemId = currentSelectedItemId,
-               items.contains(where: { $0.id == currentSelectedItemId }) {
-                updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-            } else {
-                updateCardViews()
-            }
-            
-            showSearchLoading(false)
-            return
-        }
         
         // Only update if the search text has actually changed
         if searchText != newSearchText {
@@ -2931,13 +1837,7 @@ class HistoryWindowController: NSWindowController {
         if searchText.isEmpty {
             filteredItems = items
             DispatchQueue.main.async { [weak self] in
-                // Preserve current selection if possible
-                if let self = self, let currentSelectedItemId = self.selectedCard?.item.id,
-                   self.items.contains(where: { $0.id == currentSelectedItemId }) {
-                    self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-                } else {
-                    self?.updateCardViews()
-                }
+                self?.updateCardViews()
             }
             return
         }
@@ -2950,29 +1850,6 @@ class HistoryWindowController: NSWindowController {
             guard let self = self else { return }
             
             let searchLower = self.searchText.lowercased()
-            
-            // Add safety check for empty search text
-            if searchLower.isEmpty {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.filteredItems = self.items
-                    
-                    // Preserve current selection if possible
-                    if let currentSelectedItemId = self.selectedCard?.item.id,
-                       self.items.contains(where: { $0.id == currentSelectedItemId }) {
-                        self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-                    } else {
-                        self.updateCardViews()
-                    }
-                    
-                    self.showSearchLoading(false)
-                }
-                return
-            }
-            
-            // Store the current selected item ID before filtering
-            let currentSelectedItemId = self.selectedCard?.item.id
-            
             let filtered = self.items.filter { item in
                 if self.currentTab == 1 && !item.isPinned {
                     return false
@@ -2982,8 +1859,6 @@ class HistoryWindowController: NSWindowController {
                     // For images, we can only search by timestamp or other metadata
                     return true
                 } else {
-                    // Add safety check for empty content
-                    guard !item.content.isEmpty else { return false }
                     return item.content.lowercased().contains(searchLower)
                 }
             }
@@ -2992,16 +1867,7 @@ class HistoryWindowController: NSWindowController {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.filteredItems = filtered
-                
-                // Check if the currently selected item is in the filtered results
-                if let currentSelectedItemId = currentSelectedItemId,
-                   filtered.contains(where: { $0.id == currentSelectedItemId }) {
-                    // If the currently selected item is in the filtered results, preserve its selection
-                    self.updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-                } else {
-                    // Otherwise, just update normally
-                    self.updateCardViews()
-                }
+                self.updateCardViews()
                 
                 // Hide loading indicator
                 self.showSearchLoading(false)
@@ -3038,20 +1904,10 @@ class HistoryWindowController: NSWindowController {
     
     @objc private func searchCancelled() {
         // This is called when the user clicks the X button in the search field
-        // Store the current selected item ID if any
-        let currentSelectedItemId = selectedCard?.item.id
-        
         searchText = ""
         searchField.stringValue = ""
         filteredItems = items
-        
-        // Preserve selection if possible
-        if let currentSelectedItemId = currentSelectedItemId,
-           items.contains(where: { $0.id == currentSelectedItemId }) {
-            updateCardViews(preserveSelectedItemId: currentSelectedItemId)
-        } else {
-            updateCardViews()
-        }
+        updateCardViews()
         
         // Reset focus to the container view
         window?.makeFirstResponder(containerView)
@@ -3063,50 +1919,6 @@ class HistoryWindowController: NSWindowController {
         if let searchField = notification.object as? NSSearchField {
             searchTextChanged(searchField)
         }
-    }
-    
-    // Add this new method to handle item deletion
-    @objc private func handleItemDeletion(_ notification: Notification) {
-        // Get the item ID being deleted
-        guard let itemId = notification.object as? UUID else { return }
-        
-        // Get the current display items based on tab and search filter
-        let displayItems: [ClipboardItem]
-        if searchText.isEmpty {
-            displayItems = currentTab == 0 ? items : items.filter { $0.isPinned }
-        } else {
-            displayItems = currentTab == 0 ? filteredItems : filteredItems.filter { $0.isPinned }
-        }
-        
-        // Find the index of the item being deleted
-        if let currentIndex = displayItems.firstIndex(where: { $0.id == itemId }) {
-            // Determine the next item to focus on
-            if currentIndex < displayItems.count - 1 {
-                // If not the last item, focus on the next item
-                nextItemToFocusAfterDeletion = displayItems[currentIndex + 1].id
-                print("Will focus on next item: \(nextItemToFocusAfterDeletion!)")
-            } else if displayItems.count > 1 {
-                // If it's the last item and there are other items, focus on the first item
-                nextItemToFocusAfterDeletion = displayItems[0].id
-                print("Will focus on first item: \(nextItemToFocusAfterDeletion!)")
-            } else {
-                // If it's the only item, there's nothing to focus on
-                nextItemToFocusAfterDeletion = nil
-                print("No item to focus on after deletion")
-            }
-        }
-    }
-    
-    func windowWillClose(_ notification: Notification) {
-        // Clean up any resources
-        
-        // Remove the event monitor
-        if let keyEventMonitor = keyEventMonitor {
-            NSEvent.removeMonitor(keyEventMonitor)
-            self.keyEventMonitor = nil
-        }
-        
-        // ... existing code ...
     }
 }
 
@@ -3149,10 +1961,9 @@ extension HistoryWindowController: NSTableViewDelegate {
 // MARK: - NSWindowDelegate
 extension HistoryWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
-        // No super call needed
-        
-        // Ensure the window's first responder is set to the containerView
-        // This is crucial for keyboard shortcuts like space to work properly
+        // Ensure the search field doesn't get focus automatically
+        // Set focus to the container view instead
+        // Add a small delay to ensure this happens after all other initialization
         DispatchQueue.main.async {
             self.window?.makeFirstResponder(self.containerView)
         }
