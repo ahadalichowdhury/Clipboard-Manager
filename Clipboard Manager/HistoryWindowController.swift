@@ -529,47 +529,60 @@ class ClipboardItemCard: NSView {
         let targetApp = NSWorkspace.shared.frontmostApplication
         print("Target application before paste: \(targetApp?.localizedName ?? "Unknown")")
         
+        // Store the target app's process ID for later reactivation
+        let targetAppPID = targetApp?.processIdentifier
+        
         // Perform paste action (copy to clipboard)
         clickAction?(item)
         
-        // Always close the window immediately after copying
-        // This is important to get out of the way before pasting
+        // Immediately activate the target application BEFORE closing our window
+        // This is crucial to prevent Finder from becoming active
+        if let pid = targetAppPID,
+           let app = NSRunningApplication(processIdentifier: pid),
+           app.bundleIdentifier != Bundle.main.bundleIdentifier {
+            
+            print("Activating target app before closing window: \(app.localizedName ?? "Unknown")")
+            
+            // Activate with stronger options
+            if #available(macOS 14.0, *) {
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            } else {
+                app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            }
+            
+            // Small delay to ensure activation takes effect
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        
+        // Now close the window without animation
         if let window = self.window {
-            print("Closing window after copying")
-            window.close()
+            print("Closing window after activating target app")
+            
+            // Disable animation when closing the window
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                window.orderOut(nil)
+            }, completionHandler: nil)
         } else {
             print("Cannot close window (window is nil)")
         }
         
-        // Check if we have a valid target application
-        if let targetApp = targetApp, targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
-            print("Pasting to target app: \(targetApp.localizedName ?? "Unknown")")
-            
-            // Reduced delay to make paste operation faster
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                print("Performing universal paste operation")
-                print("isRichText: \(self.item.isRichText), hasMultipleFormats: \(self.item.hasMultipleFormats), isImage: \(self.item.isImage)")
-                
-                // First, ensure the target app is active
-                if #available(macOS 14.0, *) {
-                    targetApp.activate(options: .activateAllWindows)
-                } else {
-                    targetApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
-                }
-                
-                // Reduced delay to make paste operation faster
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    // Use the universal paste method that works with any application
-                    PasteManager.shared.universalPaste()
-                }
-            }
+        // Immediately perform the paste operation without additional delays
+        // This matches the behavior of the Enter/Return key
+        print("Immediately performing paste operation")
+        print("isRichText: \(self.item.isRichText), hasMultipleFormats: \(self.item.hasMultipleFormats), isImage: \(self.item.isImage)")
+        
+        // Use the appropriate paste method based on content type
+        if self.item.isImage {
+            // For images, use the specialized image paste method
+            PasteManager.shared.paste(isRichText: false, isImage: true)
+        } else if self.item.isRichText || self.item.hasMultipleFormats {
+            // For rich text, use the specialized rich text paste method
+            PasteManager.shared.paste(isRichText: true, isImage: false)
         } else {
-            print("No valid target application to paste to")
-            
-            // Reduced delay to make paste operation faster
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                PasteManager.shared.universalPaste()
-            }
+            // For plain text, use the universal paste method
+            PasteManager.shared.universalPaste()
         }
     }
     
@@ -589,6 +602,12 @@ class ClipboardItemCard: NSView {
         // Prevent event propagation
         NSApp.preventWindowOrdering()
         
+        // Get the currently active application (where the cursor is positioned)
+        let targetApp = NSWorkspace.shared.frontmostApplication
+        
+        // Store the target app's process ID for later reactivation
+        let targetAppPID = targetApp?.processIdentifier
+        
         // Create context menu
         let menu = NSMenu()
         
@@ -597,9 +616,18 @@ class ClipboardItemCard: NSView {
         copyItem.target = self
         menu.addItem(copyItem)
         
-        // Add "Paste" option
-        let pasteItem = NSMenuItem(title: "Paste", action: #selector(pasteButtonClicked), keyEquivalent: "")
+        // Add "Paste" option with custom handler to prevent Finder blinking
+        let pasteItem = NSMenuItem(title: "Paste", action: nil, keyEquivalent: "")
         pasteItem.target = self
+        
+        // Use a custom action handler for the paste menu item
+        pasteItem.action = #selector(pasteMenuItemClicked(_:))
+        
+        // Store the target app PID as represented object for later use
+        if let pid = targetAppPID {
+            pasteItem.representedObject = pid
+        }
+        
         menu.addItem(pasteItem)
         
         // Add appropriate edit/view option based on content type
@@ -620,6 +648,73 @@ class ClipboardItemCard: NSView {
         
         // Show menu
         NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: sender)
+    }
+    
+    // Custom handler for paste menu item to prevent Finder blinking
+    @objc private func pasteMenuItemClicked(_ sender: NSMenuItem) {
+        // Get the target app PID from the represented object
+        guard let pid = sender.representedObject as? pid_t else {
+            // Fallback to regular paste button click if no PID is available
+            pasteButtonClicked(NSButton())
+            return
+        }
+        
+        // Prevent event propagation
+        NSApp.preventWindowOrdering()
+        
+        // Log that we're handling a paste action
+        print("Paste menu item clicked for item: \(item.id), isImage: \(item.isImage)")
+        
+        // Perform paste action (copy to clipboard)
+        clickAction?(item)
+        
+        // Immediately activate the target application BEFORE closing our window
+        // This is crucial to prevent Finder from becoming active
+        if let app = NSRunningApplication(processIdentifier: pid),
+           app.bundleIdentifier != Bundle.main.bundleIdentifier {
+            
+            print("Activating target app before closing window: \(app.localizedName ?? "Unknown")")
+            
+            // Activate with stronger options
+            if #available(macOS 14.0, *) {
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            } else {
+                app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            }
+            
+            // Small delay to ensure activation takes effect
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        
+        // Now close the window without animation
+        if let window = self.window {
+            print("Closing window after activating target app")
+            
+            // Disable animation when closing the window
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                window.orderOut(nil)
+            }, completionHandler: nil)
+        } else {
+            print("Cannot close window (window is nil)")
+        }
+        
+        // Immediately perform the paste operation without additional delays
+        // This matches the behavior of the Enter/Return key
+        print("Immediately performing paste operation from menu item")
+        
+        // Use the appropriate paste method based on content type
+        if self.item.isImage {
+            // For images, use the specialized image paste method
+            PasteManager.shared.paste(isRichText: false, isImage: true)
+        } else if self.item.isRichText || self.item.hasMultipleFormats {
+            // For rich text, use the specialized rich text paste method
+            PasteManager.shared.paste(isRichText: true, isImage: false)
+        } else {
+            // For plain text, use the universal paste method
+            PasteManager.shared.universalPaste()
+        }
     }
     
     @objc private func copyItemClicked() {

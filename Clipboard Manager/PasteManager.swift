@@ -1557,9 +1557,12 @@ class PasteManager {
         // Get the frontmost application
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
             Logger.shared.log("PasteManager: Cannot determine frontmost application")
-            Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED =====")
+            Logger.shared.log("===== UNIVERSAL PASTE OPERATION FAILED (No Frontmost App) =====")
             return
         }
+        
+        // Log the target application
+        Logger.shared.log("PasteManager: Target application for paste: \(frontApp.localizedName ?? "Unknown") (Bundle ID: \(frontApp.bundleIdentifier ?? "unknown"))")
         
         // Ensure the frontmost application is not our app
         if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
@@ -1571,14 +1574,33 @@ class PasteManager {
                 $0.bundleIdentifier != Bundle.main.bundleIdentifier && 
                 $0.activationPolicy == .regular 
             }) {
-                Logger.shared.log("PasteManager: Activating previous app: \(previousApp.localizedName ?? "Unknown")")
-                previousApp.activate(options: .activateIgnoringOtherApps)
+                Logger.shared.log("PasteManager: Found alternative app to paste to: \(previousApp.localizedName ?? "Unknown")")
                 
-                // Reduced delay to make paste operation faster
-                Thread.sleep(forTimeInterval: 0.05)
+                // Skip the ensureApplicationActivation method and directly activate
+                // This is more direct and less likely to cause Finder to become active
+                if #available(macOS 14.0, *) {
+                    previousApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                } else {
+                    previousApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                }
                 
-                // Try the universal paste on this app
-                universalPasteToFrontmostApp()
+                // Small delay to ensure activation takes effect
+                Thread.sleep(forTimeInterval: 0.1)
+                
+                // Verify the app was actually activated
+                if let currentFrontApp = NSWorkspace.shared.frontmostApplication,
+                   currentFrontApp.bundleIdentifier == previousApp.bundleIdentifier {
+                    Logger.shared.log("PasteManager: Successfully activated alternative app")
+                    // Directly try the most reliable paste method
+                    tryUniversalDirectPaste()
+                } else {
+                    Logger.shared.log("PasteManager: Failed to activate alternative app, trying again with longer delay")
+                    // Try again with a longer delay
+                    Thread.sleep(forTimeInterval: 0.2)
+                    previousApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+                    Thread.sleep(forTimeInterval: 0.2)
+                    tryUniversalDirectPaste()
+                }
                 return
             } else {
                 Logger.shared.log("PasteManager: Could not find a suitable target application")
@@ -1590,15 +1612,48 @@ class PasteManager {
             }
         }
         
-        // Perform the universal paste to the frontmost app
-        universalPasteToFrontmostApp()
+        // Skip the ensureApplicationActivation method and directly activate
+        // This is more direct and less likely to cause Finder to become active
+        if #available(macOS 14.0, *) {
+            frontApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        } else {
+            frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        }
+        
+        // Small delay to ensure activation takes effect
+        Thread.sleep(forTimeInterval: 0.1)
+        
+        // Verify the app is still frontmost
+        if let currentFrontApp = NSWorkspace.shared.frontmostApplication, 
+           currentFrontApp.bundleIdentifier == frontApp.bundleIdentifier {
+            Logger.shared.log("PasteManager: Target app is confirmed frontmost, proceeding with paste")
+            // Directly try the most reliable paste method
+            tryUniversalDirectPaste()
+        } else {
+            Logger.shared.log("PasteManager: Target app is not frontmost, trying to reactivate")
+            // Try to reactivate the app with stronger options
+            if #available(macOS 14.0, *) {
+                frontApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            } else {
+                frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+            tryUniversalDirectPaste()
+        }
     }
     
     // Helper method to perform a universal paste to the frontmost application
     private func universalPasteToFrontmostApp() {
         // Try multiple paste methods in sequence
         DispatchQueue.global(qos: .userInteractive).async {
-            // 1. Try direct paste with Command+V first (most universal)
+            // 0. Try app-specific paste methods first if applicable
+            if self.tryAppSpecificPaste() {
+                Logger.shared.log("PasteManager: App-specific paste succeeded")
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (App-Specific Method) =====")
+                return
+            }
+            
+            // 1. Try direct paste with Command+V (most universal)
             if self.tryUniversalDirectPaste() {
                 Logger.shared.log("PasteManager: Universal direct paste succeeded")
                 Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (Direct Method) =====")
@@ -1613,7 +1668,19 @@ class PasteManager {
                 return
             }
             
-            // 3. Try osascript as a last resort
+            // 3. Try direct NSPasteboard manipulation
+            Thread.sleep(forTimeInterval: 0.05)
+            if self.tryDirectNSPasteboardPaste() {
+                // If we successfully manipulated the pasteboard, try the direct paste method again
+                Thread.sleep(forTimeInterval: 0.1)
+                if self.tryUniversalDirectPaste() {
+                    Logger.shared.log("PasteManager: NSPasteboard refresh + direct paste succeeded")
+                    Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (NSPasteboard Refresh Method) =====")
+                    return
+                }
+            }
+            
+            // 4. Try osascript as a fallback
             Thread.sleep(forTimeInterval: 0.05)
             if self.tryUniversalOsascriptPaste() {
                 Logger.shared.log("PasteManager: Universal osascript paste succeeded")
@@ -1621,7 +1688,46 @@ class PasteManager {
                 return
             }
             
-            // 4. If all else fails, notify the user
+            // 5. Try NSResponder paste as a last resort
+            Thread.sleep(forTimeInterval: 0.05)
+            if self.tryNSResponderPaste() {
+                Logger.shared.log("PasteManager: NSResponder paste succeeded")
+                Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (NSResponder Method) =====")
+                return
+            }
+            
+            // 6. If all else fails, try one more direct paste with longer delays
+            Thread.sleep(forTimeInterval: 0.1)
+            Logger.shared.log("PasteManager: Trying final direct paste with longer delays")
+            
+            // Create a source
+            if let source = CGEventSource(stateID: .combinedSessionState) {
+                // Create key down event for Command+V
+                if let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) {
+                    keyVDown.flags = .maskCommand
+                    
+                    // Create key up event for Command+V
+                    if let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) {
+                        keyVUp.flags = .maskCommand
+                        
+                        // Post the events with longer delays
+                        Logger.shared.log("PasteManager: Posting final keydown event...")
+                        keyVDown.post(tap: .cghidEventTap)
+                        
+                        // Much longer delay between keydown and keyup
+                        Thread.sleep(forTimeInterval: 0.2)
+                        
+                        Logger.shared.log("PasteManager: Posting final keyup event...")
+                        keyVUp.post(tap: .cghidEventTap)
+                        
+                        Logger.shared.log("PasteManager: Final direct paste attempt completed")
+                        Logger.shared.log("===== UNIVERSAL PASTE OPERATION COMPLETED (Final Direct Method) =====")
+                        return
+                    }
+                }
+            }
+            
+            // 7. If all else fails, notify the user
             DispatchQueue.main.async {
                 self.showPasteFailureNotification()
             }
@@ -1631,42 +1737,140 @@ class PasteManager {
     
     // Direct universal paste method using CGEvent
     private func tryUniversalDirectPaste() -> Bool {
+        Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD START =====")
         Logger.shared.log("PasteManager: Trying universal direct paste method")
         
-        // Create a source
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            Logger.shared.log("PasteManager: Failed to create event source")
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            Logger.shared.log("PasteManager: Cannot determine frontmost application")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (No Frontmost App) =====")
             return false
         }
         
-        // Create key down event for Command+V
-        guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true) else {
-            Logger.shared.log("PasteManager: Failed to create keydown event")
+        // Log the target application
+        Logger.shared.log("PasteManager: Target application for paste: \(frontApp.localizedName ?? "Unknown") (Bundle ID: \(frontApp.bundleIdentifier ?? "unknown"))")
+        
+        // Ensure the frontmost application is not our app
+        if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            Logger.shared.log("PasteManager: Cannot paste into Clipboard Manager itself")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Target is Clipboard Manager) =====")
             return false
         }
-        keyVDown.flags = .maskCommand
         
-        // Create key up event for Command+V
-        guard let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
-            Logger.shared.log("PasteManager: Failed to create keyup event")
+        // Verify the target application is still frontmost before proceeding
+        // This is crucial to prevent Finder from becoming active
+        if let currentFrontApp = NSWorkspace.shared.frontmostApplication,
+           currentFrontApp.bundleIdentifier != frontApp.bundleIdentifier {
+            Logger.shared.log("PasteManager: Target application is no longer frontmost. Current frontmost: \(currentFrontApp.localizedName ?? "Unknown")")
+            
+            // Try to reactivate the target application
+            Logger.shared.log("PasteManager: Attempting to reactivate target application")
+            if #available(macOS 14.0, *) {
+                frontApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            } else {
+                frontApp.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            }
+            
+            // Small delay to ensure activation takes effect
+            Thread.sleep(forTimeInterval: 0.1)
+            
+            // Verify activation again
+            if let verifyFrontApp = NSWorkspace.shared.frontmostApplication,
+               verifyFrontApp.bundleIdentifier != frontApp.bundleIdentifier {
+                Logger.shared.log("PasteManager: Failed to reactivate target application")
+                Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Cannot Activate Target) =====")
+                return false
+            }
+        }
+        
+        // Create a source with HID state for more accurate simulation
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            Logger.shared.log("PasteManager: Failed to create HID event source")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (No Event Source) =====")
             return false
         }
-        keyVUp.flags = .maskCommand
         
-        // Post the events with minimal delays
-        Logger.shared.log("PasteManager: Posting keydown event...")
-        keyVDown.post(tap: .cghidEventTap)
+        // The 'v' key has virtual keycode 9
+        let vKeyCode: CGKeyCode = 9
+        let cmdKeyCode: CGKeyCode = 0x37 // Command key code
         
-        // Minimal delay between keydown and keyup for better speed while maintaining reliability
-        usleep(50000) // 50ms delay
+        // Create key down event for Command key first
+        guard let cmdKeyDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: true) else {
+            Logger.shared.log("PasteManager: Failed to create Command key down event")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Cannot Create Command Down Event) =====")
+            return false
+        }
         
-        Logger.shared.log("PasteManager: Posting keyup event...")
-        keyVUp.post(tap: .cghidEventTap)
+        // Create key down event for 'v' key with Command modifier
+        guard let vKeyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true) else {
+            Logger.shared.log("PasteManager: Failed to create 'v' key down event")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Cannot Create V Down Event) =====")
+            return false
+        }
+        vKeyDown.flags = .maskCommand
         
-        // Minimal delay after posting events
+        // Create key up event for 'v' key with Command modifier
+        guard let vKeyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
+            Logger.shared.log("PasteManager: Failed to create 'v' key up event")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Cannot Create V Up Event) =====")
+            return false
+        }
+        vKeyUp.flags = .maskCommand
+        
+        // Create key up event for Command key
+        guard let cmdKeyUp = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: false) else {
+            Logger.shared.log("PasteManager: Failed to create Command key up event")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Cannot Create Command Up Event) =====")
+            return false
+        }
+        
+        // Verify the target application is still frontmost before posting events
+        if let currentFrontApp = NSWorkspace.shared.frontmostApplication,
+           currentFrontApp.bundleIdentifier != frontApp.bundleIdentifier {
+            Logger.shared.log("PasteManager: Target application lost focus before posting events")
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Target Lost Focus) =====")
+            return false
+        }
+        
+        // Post the events with precise timing to simulate a real user pressing Cmd+V
+        Logger.shared.log("PasteManager: Posting Command key down event...")
+        cmdKeyDown.post(tap: .cghidEventTap)
+        
+        // Small delay between Command key down and 'v' key down
+        usleep(20000) // 20ms
+        
+        // Verify the target application is still frontmost after Command key down
+        if let currentFrontApp = NSWorkspace.shared.frontmostApplication,
+           currentFrontApp.bundleIdentifier != frontApp.bundleIdentifier {
+            Logger.shared.log("PasteManager: Target application lost focus after Command key down")
+            
+            // Release the Command key to avoid it being stuck
+            cmdKeyUp.post(tap: .cghidEventTap)
+            
+            Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD FAILED (Target Lost Focus After Command Down) =====")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Posting 'v' key down event...")
+        vKeyDown.post(tap: .cghidEventTap)
+        
+        // Delay between key down and key up events
+        usleep(50000) // 50ms
+        
+        Logger.shared.log("PasteManager: Posting 'v' key up event...")
+        vKeyUp.post(tap: .cghidEventTap)
+        
+        // Small delay between 'v' key up and Command key up
+        usleep(20000) // 20ms
+        
+        Logger.shared.log("PasteManager: Posting Command key up event...")
+        cmdKeyUp.post(tap: .cghidEventTap)
+        
+        // Small delay after all events
         Thread.sleep(forTimeInterval: 0.05)
         
-        Logger.shared.log("PasteManager: Universal direct paste method completed")
+        Logger.shared.log("PasteManager: Universal direct paste method completed successfully")
+        Logger.shared.log("===== UNIVERSAL DIRECT PASTE METHOD COMPLETED =====")
         return true
     }
     
@@ -1719,6 +1923,24 @@ class PasteManager {
             tell application "System Events"
                 key code 9 using {command down}
             end tell
+            """,
+            
+            // New: Try with longer delays
+            """
+            tell application "System Events"
+                delay 0.2
+                keystroke "v" using command down
+                delay 0.2
+            end tell
+            """,
+            
+            // New: Try with application activation first
+            """
+            tell application "\(appName)" to activate
+            delay 0.2
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
             """
         ]
         
@@ -1753,11 +1975,59 @@ class PasteManager {
         let tempDir = FileManager.default.temporaryDirectory
         let scriptPath = tempDir.appendingPathComponent("universal_paste_script.scpt")
         
-        // Simple script that just does Cmd+V
+        // Get the frontmost app name for more targeted script
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        
+        // Enhanced script with multiple approaches
         let scriptContent = """
-        tell application "System Events"
-            keystroke "v" using command down
-        end tell
+        -- Try multiple paste approaches for maximum compatibility
+        
+        -- Approach 1: Basic Command+V
+        try
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+            return "Basic Command+V succeeded"
+        on error errMsg
+            log "Basic approach failed: " & errMsg
+        end try
+        
+        -- Approach 2: Target specific app if available
+        try
+            tell application "System Events"
+                tell process "\(appName)"
+                    keystroke "v" using command down
+                end tell
+            end tell
+            return "App-specific approach succeeded"
+        on error errMsg
+            log "App-specific approach failed: " & errMsg
+        end try
+        
+        -- Approach 3: With delays
+        try
+            delay 0.2
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+            delay 0.1
+            return "Delayed approach succeeded"
+        on error errMsg
+            log "Delayed approach failed: " & errMsg
+        end try
+        
+        -- Approach 4: Using key code
+        try
+            tell application "System Events"
+                key code 9 using {command down}
+            end tell
+            return "Key code approach succeeded"
+        on error errMsg
+            log "Key code approach failed: " & errMsg
+        end try
+        
+        -- If we get here, all approaches failed
+        error "All paste approaches failed"
         """
         
         do {
@@ -1780,7 +2050,12 @@ class PasteManager {
             try FileManager.default.removeItem(at: scriptPath)
             
             if task.terminationStatus == 0 {
-                Logger.shared.log("PasteManager: Universal osascript approach succeeded")
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: outputData, encoding: .utf8), !output.isEmpty {
+                    Logger.shared.log("PasteManager: Universal osascript succeeded: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+                } else {
+                    Logger.shared.log("PasteManager: Universal osascript succeeded with no output")
+                }
                 return true
             } else {
                 let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
@@ -1794,5 +2069,247 @@ class PasteManager {
             Logger.shared.log("PasteManager: Universal osascript error: \(error)")
             return false
         }
+    }
+    
+    // New method: Try paste using NSPasteboard and NSResponder
+    private func tryNSResponderPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying NSResponder paste method")
+        
+        // This method attempts to use the NSResponder paste: method
+        // It may work in some contexts where the app is properly respecting responder chain
+        
+        // Get the key window
+        guard let keyWindow = NSApplication.shared.keyWindow else {
+            Logger.shared.log("PasteManager: No key window available for NSResponder paste")
+            return false
+        }
+        
+        // Try to find a valid responder
+        var responder: NSResponder? = keyWindow.firstResponder
+        
+        // If no first responder, try the window itself
+        if responder == nil {
+            responder = keyWindow
+        }
+        
+        // Try to perform paste: action
+        if let responder = responder, responder.responds(to: #selector(NSResponder.paste(_:))) {
+            Logger.shared.log("PasteManager: Found responder that responds to paste:")
+            
+            // Perform the paste action on the main thread
+            var success = false
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            DispatchQueue.main.async {
+                responder.paste(nil)
+                success = true
+                semaphore.signal()
+            }
+            
+            // Wait for the main thread action to complete (with timeout)
+            _ = semaphore.wait(timeout: .now() + 1.0)
+            
+            Logger.shared.log("PasteManager: NSResponder paste \(success ? "succeeded" : "failed")")
+            return success
+        }
+        
+        Logger.shared.log("PasteManager: No suitable responder found for NSResponder paste")
+        return false
+    }
+    
+    // New method: Try paste using direct NSPasteboard manipulation
+    private func tryDirectNSPasteboardPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying direct NSPasteboard paste method")
+        
+        // This method attempts to use NSPasteboard directly to paste content
+        // It may work in some contexts where the app is properly handling pasteboard changes
+        
+        // Get the current pasteboard content
+        let pasteboard = NSPasteboard.general
+        let currentChangeCount = pasteboard.changeCount
+        
+        // Try to "refresh" the pasteboard by writing the same content back to it
+        // This can sometimes trigger apps to recognize new content
+        
+        // Check what types of data we have
+        let types = pasteboard.types ?? []
+        Logger.shared.log("PasteManager: Current pasteboard types: \(types)")
+        
+        var success = false
+        
+        // Try to preserve and rewrite each type of data
+        for type in types {
+            if let data = pasteboard.data(forType: type) {
+                // Clear and set the data for this type
+                pasteboard.clearContents()
+                if pasteboard.setData(data, forType: type) {
+                    Logger.shared.log("PasteManager: Successfully rewrote data for type: \(type)")
+                    success = true
+                }
+            } else if let string = pasteboard.string(forType: type) {
+                // Clear and set the string for this type
+                pasteboard.clearContents()
+                if pasteboard.setString(string, forType: type) {
+                    Logger.shared.log("PasteManager: Successfully rewrote string for type: \(type)")
+                    success = true
+                }
+            }
+        }
+        
+        // Check if the pasteboard change count increased
+        let newChangeCount = pasteboard.changeCount
+        Logger.shared.log("PasteManager: Pasteboard change count: \(currentChangeCount) -> \(newChangeCount)")
+        
+        // If we successfully rewrote at least one type, or the change count increased, consider it a success
+        return success || (newChangeCount > currentChangeCount)
+    }
+    
+    // Method to handle special cases for specific applications
+    private func tryAppSpecificPaste() -> Bool {
+        Logger.shared.log("PasteManager: Trying app-specific paste method")
+        
+        // Get the frontmost application
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let bundleId = frontApp.bundleIdentifier else {
+            Logger.shared.log("PasteManager: Could not determine frontmost app")
+            return false
+        }
+        
+        Logger.shared.log("PasteManager: Checking for special handling for app: \(bundleId)")
+        
+        // Handle specific applications that might need custom paste handling
+        switch bundleId {
+        case "com.microsoft.Word", "com.microsoft.Excel", "com.microsoft.Powerpoint":
+            // Microsoft Office apps sometimes need special handling
+            return tryMicrosoftOfficePaste(appName: frontApp.localizedName ?? "Microsoft Office")
+            
+        case "com.apple.Safari", "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac":
+            // Web browsers might need special handling for certain input fields
+            return tryBrowserPaste(appName: frontApp.localizedName ?? "Browser")
+            
+        case "com.apple.Terminal", "com.googlecode.iterm2":
+            // Terminal apps often need special handling
+            return tryTerminalPaste(appName: frontApp.localizedName ?? "Terminal")
+            
+        default:
+            // No special handling for this app
+            Logger.shared.log("PasteManager: No special handling for app: \(bundleId)")
+            return false
+        }
+    }
+    
+    // Special paste method for Microsoft Office apps
+    private func tryMicrosoftOfficePaste(appName: String) -> Bool {
+        Logger.shared.log("PasteManager: Trying Microsoft Office paste for \(appName)")
+        
+        // Microsoft Office apps sometimes need a different approach
+        let script = """
+        tell application "\(appName)"
+            activate
+            delay 0.2
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+        end tell
+        """
+        
+        let appleScript = NSAppleScript(source: script)
+        var error: NSDictionary?
+        appleScript?.executeAndReturnError(&error)
+        
+        if let error = error {
+            Logger.shared.log("PasteManager: Microsoft Office paste failed: \(error)")
+            return false
+        } else {
+            Logger.shared.log("PasteManager: Microsoft Office paste succeeded")
+            return true
+        }
+    }
+    
+    // Special paste method for web browsers
+    private func tryBrowserPaste(appName: String) -> Bool {
+        Logger.shared.log("PasteManager: Trying browser paste for \(appName)")
+        
+        // For browsers, we'll try a sequence of methods
+        
+        // 1. First try standard Command+V
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+            return false
+        }
+        
+        keyVDown.flags = .maskCommand
+        keyVUp.flags = .maskCommand
+        
+        keyVDown.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.1)
+        keyVUp.post(tap: .cghidEventTap)
+        
+        // 2. If that doesn't work, try with AppleScript
+        Thread.sleep(forTimeInterval: 0.2)
+        
+        let script = """
+        tell application "\(appName)"
+            activate
+            delay 0.2
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+        end tell
+        """
+        
+        let appleScript = NSAppleScript(source: script)
+        var error: NSDictionary?
+        appleScript?.executeAndReturnError(&error)
+        
+        if let error = error {
+            Logger.shared.log("PasteManager: Browser AppleScript paste failed: \(error)")
+            return false
+        } else {
+            Logger.shared.log("PasteManager: Browser paste succeeded")
+            return true
+        }
+    }
+    
+    // Special paste method for terminal apps
+    private func tryTerminalPaste(appName: String) -> Bool {
+        Logger.shared.log("PasteManager: Trying terminal paste for \(appName)")
+        
+        // Terminal apps often use Command+V or a custom shortcut
+        
+        // Try standard Command+V first
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+            return false
+        }
+        
+        keyVDown.flags = .maskCommand
+        keyVUp.flags = .maskCommand
+        
+        keyVDown.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.1)
+        keyVUp.post(tap: .cghidEventTap)
+        
+        // For iTerm2, also try Command+Shift+V as an alternative
+        if appName.contains("iTerm") {
+            Thread.sleep(forTimeInterval: 0.2)
+            
+            guard let keyVDown2 = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+                  let keyVUp2 = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+                return true // Return true since we already tried Command+V
+            }
+            
+            keyVDown2.flags = [.maskCommand, .maskShift]
+            keyVUp2.flags = [.maskCommand, .maskShift]
+            
+            keyVDown2.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.1)
+            keyVUp2.post(tap: .cghidEventTap)
+        }
+        
+        Logger.shared.log("PasteManager: Terminal paste completed")
+        return true
     }
 } 
